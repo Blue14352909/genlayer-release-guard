@@ -358,14 +358,15 @@ gltest tests/integration/ -v -s
 
 ---
 
-## Future Work
+## Deployment
 
-- **Custom policy engine**: Allow policies to reference external check results
-- **Verification expiry**: Add TTL to verification records
-- **Batch verification**: Verify multiple releases in one transaction
-- **On-chain badges**: Issue verifiable credentials for verified releases
-- **CI/CD integration**: GitHub Actions workflow that triggers ReleaseGuard
-- **Multi-chain attestation**: Bridge verification results to other chains
+| Item | Value |
+|---|---|
+| Contract address | `0x54877FDcf9cae0A995a7D5CFDE656723bE13a2b4` |
+| Transaction hash | `0x05a35eeaa977620816acde5b4c4e52bd2e0d0e96d678270a0227deafa87e979e` |
+| Consensus result | Accepted (5 validators) |
+| Explorer | [View on Explorer](https://explorer-studio.genlayer.com/tx/0x05a35eeaa977620816acde5b4c4e52bd2e0d0e96d678270a0227deafa87e979e) |
+| Studio | [Import Contract](https://studio.genlayer.com/?import-contract=0x54877FDcf9cae0A995a7D5CFDE656723bE13a2b4) |
 
 ---
 
