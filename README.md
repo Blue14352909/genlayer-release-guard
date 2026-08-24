@@ -316,8 +316,7 @@ ReleaseGuard/
 └── docs/
     ├── ARCHITECTURE.md
     ├── CONSENSUS.md
-    ├── SECURITY.md
-    └── DECISIONS.md
+    └── SECURITY.md
 ```
 
 ---
