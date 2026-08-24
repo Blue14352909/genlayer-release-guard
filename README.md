@@ -4,7 +4,7 @@ On-chain release attestation for GenLayer. Verifies whether software releases ar
 
 ## What it does
 
-Takes a release URL + project info → runs multiple checks via GenLayer consensus → returns VERIFIED, REJECTED, or INCONCLUSIVE.
+Takes a release URL + project info, runs multiple checks via GenLayer consensus, returns VERIFIED, REJECTED, or INCONCLUSIVE.
 
 Each check fetches the evidence page, extracts stable facts via LLM, derives a categorical verdict, and reaches consensus across validators. The final verdict is composed deterministically, no LLM involved at the verdict layer.
 
@@ -66,7 +66,7 @@ contracts/
   freshness_check.py
   source_corroboration.py
   semantic_policy.py
-  release_guard.py          ← orchestrator
+  release_guard.py          # orchestrator
 tests/direct/
   test_source_attestation.py
   test_license_check.py
