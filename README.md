@@ -6,7 +6,7 @@ On-chain release attestation for GenLayer. Verifies whether software releases ar
 
 Takes a release URL + project info → runs multiple checks via GenLayer consensus → returns VERIFIED, REJECTED, or INCONCLUSIVE.
 
-Each check fetches the evidence page, extracts stable facts via LLM, derives a categorical verdict, and reaches consensus across validators. The final verdict is composed deterministically — no LLM involved at the verdict layer.
+Each check fetches the evidence page, extracts stable facts via LLM, derives a categorical verdict, and reaches consensus across validators. The final verdict is composed deterministically, no LLM involved at the verdict layer.
 
 Key invariant: if we can't check (FETCH_FAILED), we can't approve. That's enforced in code, not left to an LLM.
 
@@ -30,10 +30,10 @@ The orchestrator (`release_guard.py`) composes all of them.
 
 Every check returns one of:
 
-- **PASS** — evidence confirms the claim
-- **FAIL** — evidence contradicts the claim
-- **FETCH_FAILED** — couldn't retrieve evidence (fail closed)
-- **INSUFFICIENT_EVIDENCE** — evidence too weak to decide
+- **PASS** - evidence confirms the claim
+- **FAIL** - evidence contradicts the claim
+- **FETCH_FAILED** - couldn't retrieve evidence (fail closed)
+- **INSUFFICIENT_EVIDENCE** - evidence too weak to decide
 
 ## API
 
