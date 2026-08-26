@@ -4,13 +4,27 @@ On-chain release attestation for GenLayer. Verifies whether software releases ar
 
 ## What it does
 
-Takes a release URL + project info, runs multiple checks via GenLayer consensus, returns VERIFIED, REJECTED, or INCONCLUSIVE.
+Takes a release URL + project info, runs checks via GenLayer consensus, returns VERIFIED, REJECTED, or INCONCLUSIVE.
 
 Each check fetches the evidence page, extracts stable facts via LLM, derives a categorical verdict, and reaches consensus across validators. The final verdict is composed deterministically, no LLM involved at the verdict layer.
 
 Key invariant: if we can't check (FETCH_FAILED), we can't approve. That's enforced in code, not left to an LLM.
 
-## Primitives
+## Supported policies
+
+The orchestrator (`release_guard.py`) currently wires three checks:
+
+| Policy name | What it checks |
+|---|---|
+| `source` | Does the URL actually contain the claimed release? |
+| `license` | Is the project license on the allowlist? |
+| `vulnerability` | Are there known critical/high CVEs? |
+
+Pass these as a comma-separated string: `"source,license,vulnerability"`.
+
+Empty or invalid policies fail closed (INCONCLUSIVE, never VERIFIED).
+
+## Standalone primitives
 
 7 standalone contracts, each usable independently:
 
@@ -23,8 +37,6 @@ Key invariant: if we can't check (FETCH_FAILED), we can't approve. That's enforc
 | `freshness_check.py` | Is evidence recent? | `run_nondet_unsafe` |
 | `source_corroboration.py` | Do 2+ sources agree? | `run_nondet_unsafe` |
 | `semantic_policy.py` | Custom NL policy check | `prompt_non_comparative` |
-
-The orchestrator (`release_guard.py`) composes all of them.
 
 ## Evidence status
 
@@ -55,6 +67,14 @@ record = contract.get_verification(vid)
 # record["reason_code"] == ""
 ```
 
+## Fail-closed invariants
+
+- Empty policy -> INCONCLUSIVE (never VERIFIED)
+- Malformed vulnerability response -> INSUFFICIENT (never VERIFIED)
+- FETCH_FAILED -> INCONCLUSIVE (never VERIFIED)
+- Unknown check type -> INSUFFICIENT (never VERIFIED)
+- Consensus failure -> FAIL -> REJECTED
+
 ## Structure
 
 ```
@@ -72,21 +92,62 @@ tests/direct/
   test_license_check.py
   test_vulnerability_check.py
   test_release_guard.py
+  test_fail_closed.py       # focused regression tests
+tests/integration/
+  test_release_guard_studio.py
 docs/
   ARCHITECTURE.md
   CONSENSUS.md
   SECURITY.md
 ```
 
-## Running
+## Setup
+
+Requires Python 3.10+ and Docker (for GenLayer Studio integration tests).
 
 ```bash
+# Clone the repository
+git clone https://github.com/Blue14352909/genlayer-release-guard.git
+cd genlayer-release-guard
+
+# Create a virtual environment
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# Install dependencies
 pip install -r requirements.txt
+```
+
+## Linting
+
+```bash
 genvm-lint contracts/release_guard.py
+genvm-lint contracts/source_attestation.py
+genvm-lint contracts/version_attestation.py
+genvm-lint contracts/license_check.py
+genvm-lint contracts/vulnerability_check.py
+genvm-lint contracts/freshness_check.py
+genvm-lint contracts/source_corroboration.py
+genvm-lint contracts/semantic_policy.py
+```
+
+## Running tests
+
+Direct-mode tests use mocked web/LLM responses and run against the local GenLayer VM:
+
+```bash
 pytest tests/direct/ -v
 ```
 
-Direct tests use mocked web/LLM responses. For real consensus, deploy in GenLayer Studio.
+Integration tests require GenLayer Studio running (`genlayer up`):
+
+```bash
+gltest tests/integration/test_release_guard_studio.py
+```
+
+## Platform notes
+
+Direct-mode tests have been verified on Windows with the GenLayer testing suite. If you encounter temporary-file permission errors on Windows, this is a known gltest issue unrelated to the contract logic.
 
 ## Deployment
 
