@@ -62,6 +62,7 @@ INCONCLUSIVE = "INCONCLUSIVE"
 
 VALID_CHECK_STATUSES = {E_PASS, E_FAIL, E_FETCH_FAILED, E_INSUFFICIENT}
 VALID_FINAL_VERDICTS = {VERIFIED, REJECTED, INCONCLUSIVE}
+VALID_CHECK_NAMES = {"source", "license", "vulnerability"}
 
 
 # ---------------------------------------------------------------------------
@@ -215,14 +216,29 @@ def _check_vulnerability(url: str, project_name: str,
     raw_result = gl.nondet.exec_prompt(
         prompt + f"\n\nPage content:\n{content}", response_format="json")
     parsed = _parse_json_response(raw_result)
+    # Validate response structure before interpreting counts.
+    # Malformed or missing data must NOT silently become "0 vulns".
+    if not isinstance(parsed, dict):
+        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                "evidence": "Response is not a dict",
+                "reason": "Malformed vulnerability response"}
+    has_data = parsed.get("has_vulnerability_data", False)
+    if not has_data:
+        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                "evidence": "No vulnerability data reported",
+                "reason": "Evaluator reported no vulnerability data"}
     try:
         critical = int(parsed.get("critical_count", 0))
     except (ValueError, TypeError):
-        critical = 0
+        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                "evidence": "Non-integer critical_count",
+                "reason": "Malformed critical_count in vulnerability data"}
     try:
         high = int(parsed.get("high_count", 0))
     except (ValueError, TypeError):
-        high = 0
+        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                "evidence": "Non-integer high_count",
+                "reason": "Malformed high_count in vulnerability data"}
     status = E_PASS if (critical == 0 and high == 0) else E_FAIL
     return {"check_name": "vulnerability", "status": status,
             "evidence": f"{critical} critical, {high} high",
@@ -241,6 +257,13 @@ def _compose_verdict_deterministic(check_results: list) -> dict:
         3. FETCH_FAILED or INSUFFICIENT → INCONCLUSIVE (never VERIFIED)
         4. Consensus failure (exception during check) → FAIL → REJECTED
     """
+    # Empty check list: no checks ran → INCONCLUSIVE (fail closed)
+    if len(check_results) == 0:
+        return {"verdict": INCONCLUSIVE,
+                "reason_code": "EMPTY_POLICY",
+                "failed_checks": "",
+                "reason": "No checks executed"}
+
     failed_checks = []
     inconclusive_checks = []
     all_pass = True
@@ -366,6 +389,15 @@ class ReleaseGuard(gl.Contract):
         v.status = "RUNNING"
         checks = [c.strip() for c in v.policy_text.split(",") if c.strip()]
         check_results_list = []
+
+        # --- Fail-closed: empty policy must not produce VERIFIED ---
+        if len(checks) == 0:
+            check_results_list.append({
+                "check_name": "policy",
+                "status": E_INSUFFICIENT,
+                "evidence": "Empty or whitespace-only policy",
+                "reason": "No checks to run",
+            })
 
         # --- Run individual checks via consensus ---
         for check_name in checks:
