@@ -61,16 +61,19 @@ Extract the publication or release date from this page.
 PROJECT: {project_name}
 VERSION: {version}
 URL: {url}
+MAX AGE ALLOWED: {max_age_days} days
 
 PAGE CONTENT:
 {page_content}
 
 Find the date when this content was published, released, or last updated. \
+Compute how many days have passed since that date relative to today. \
 Extract ONLY observable facts.
 
 Return a JSON object with these exact fields:
 {{
   "date_string": "the date you found in ISO format (YYYY-MM-DD), or empty",
+  "days_since_publication": 0,
   "date_source": "where you found the date (e.g., 'page metadata', 'release notes header'), or empty",
   "reason": "one sentence explaining what you observed"
 }}
@@ -110,12 +113,12 @@ def _parse_json_response(raw) -> dict:
 
 
 def _derive_verdict(extracted: dict, max_age_days: int) -> dict:
-    """Derive freshness verdict from extracted date.
+    """Derive freshness verdict from extracted date and age.
 
-    NOTE: This derivation uses a simple date comparison.
-    In a production system, you'd parse the date properly.
-    Here we use LLM-extracted boolean freshness for simplicity
-    since date parsing in GenVM is limited.
+    Enforces max_age_days by comparing the LLM-extracted days_since
+    against the policy limit. Both leader and validator independently
+    extract the same date and compute the same age, so the comparison
+    is deterministic for consensus.
     """
     date_str = str(extracted.get("date_string", "")).strip()
     if not date_str:
@@ -123,12 +126,30 @@ def _derive_verdict(extracted: dict, max_age_days: int) -> dict:
                 "observed_date": "",
                 "reason": "No date found on page"}
 
-    # LLM extracts the date — we trust the extraction for comparison
-    # The key insight: both leader and validator extract independently,
-    # and the date string should be the same factual observation.
+    # Validate extracted age is present and numeric
+    days_raw = extracted.get("days_since_publication")
+    if days_raw is None:
+        return {"status": E_INSUFFICIENT,
+                "observed_date": date_str,
+                "reason": "days_since_publication not provided by evaluator"}
+    try:
+        days_since = int(days_raw)
+    except (ValueError, TypeError):
+        return {"status": E_INSUFFICIENT,
+                "observed_date": date_str,
+                "reason": f"Non-numeric days_since_publication: {days_raw}"}
+
+    # Enforce max_age_days: evidence must not be older than the limit
+    if days_since > max_age_days:
+        return {"status": E_FAIL,
+                "observed_date": date_str,
+                "reason": (f"Evidence is {days_since} days old, "
+                           f"exceeds max {max_age_days} days")}
+
     return {"status": E_PASS,
             "observed_date": date_str,
-            "reason": f"Observed date: {date_str} (max age: {max_age_days} days)"}
+            "reason": (f"Evidence is {days_since} days old "
+                       f"(limit: {max_age_days} days)")}
 
 
 # ---------------------------------------------------------------------------
@@ -192,6 +213,7 @@ class FreshnessCheck(gl.Contract):
                 project_name=project_name,
                 version=version,
                 url=url,
+                max_age_days=days,
                 page_content=content_str,
             )
             raw_result = gl.nondet.exec_prompt(prompt, response_format="json")
