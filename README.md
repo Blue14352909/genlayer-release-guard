@@ -73,7 +73,7 @@ record = contract.get_verification(vid)
 - Malformed vulnerability response -> INSUFFICIENT (never VERIFIED)
 - FETCH_FAILED -> INCONCLUSIVE (never VERIFIED)
 - Unknown check type -> INSUFFICIENT (never VERIFIED)
-- Consensus failure -> FAIL -> REJECTED
+- Consensus failure -> INSUFFICIENT -> INCONCLUSIVE
 
 ## Structure
 

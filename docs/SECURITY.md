@@ -121,11 +121,11 @@ Only the leader's result is stored on-chain after consensus. Validator results a
 
 | Failure | Result | Impact |
 |---|---|---|
-| Leader errors | Validator returns False | Consensus fail → check FAIL → REJECTED |
+| Leader errors | Validator returns False | Consensus fail → check INSUFFICIENT → INCONCLUSIVE |
 | Validator errors | Exception caught → False | Same as above |
-| LLM malformed output | Validator rejects (not in VALID_VERDICTS) | Consensus fail → check FAIL |
+| LLM malformed output | Validator rejects (not in VALID_VERDICTS) | Consensus fail → check INSUFFICIENT → INCONCLUSIVE |
 | Web fetch fails | Both fail → FETCH_FAILED | INCONCLUSIVE |
-| Leader/validator disagree | Validator returns False | Consensus fail → check FAIL |
+| Leader/validator disagree | Validator returns False | Consensus fail → check INSUFFICIENT → INCONCLUSIVE |
 
 ---
 

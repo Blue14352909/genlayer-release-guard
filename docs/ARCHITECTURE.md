@@ -84,7 +84,7 @@ The architecture is designed around three principles:
    │   │   ├─► Leader: web render → LLM extracts stable facts → derive verdict
    │   │   └─► Validator: independently re-runs pipeline → compares verdict
    │   ├─► Stores CheckResult
-   │   └─► On consensus failure: records FAIL (fail closed)
+   │   └─► On consensus failure: records INSUFFICIENT (fail closed)
    │
    ├─► Deterministic verdict composition (NO LLM):
    │   ├─► All checks PASS → VERIFIED
@@ -211,10 +211,10 @@ Every primitive follows the same error handling pattern:
 External failure → FETCH_FAILED (not PASS, not FAIL)
 Empty content    → INSUFFICIENT_EVIDENCE (not PASS, not FAIL)
 LLM malformed    → FAIL (fail closed)
-Consensus fail   → FAIL (fail closed)
+Consensus fail   → INSUFFICIENT (fail closed)
 ```
 
-The orchestrator catches consensus failures at each check and records them as FAIL, preventing a single check failure from blocking the entire verification.
+The orchestrator catches consensus failures at each check and records them as INSUFFICIENT (fail closed). A consensus failure means we could not establish a reliable result — it does not mean the evidence was evaluated and failed.
 
 ---
 

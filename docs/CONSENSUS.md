@@ -182,14 +182,14 @@ All checks explicitly PASS?
 
 ---
 
-## Consensus Failure → REJECTED
+## Consensus Failure → INCONCLUSIVE
 
 If `run_nondet_unsafe` throws (validator disagrees):
 
 1. Exception is caught by the orchestrator
-2. Check is recorded as FAIL (not FETCH_FAILED — consensus failure is a hard failure)
-3. Deterministic composition sees FAIL → REJECTED
+2. Check is recorded as INSUFFICIENT (not FAIL — the check was never evaluated, so we cannot claim the evidence failed)
+3. Deterministic composition sees INSUFFICIENT → INCONCLUSIVE
 4. Verification continues with remaining checks
-5. Final verdict: REJECTED
+5. Final verdict: INCONCLUSIVE (unless another check returns FAIL → REJECTED)
 
-This means a single consensus failure cascades to REJECTED for the entire verification — another fail-closed property.
+This means a consensus failure cannot produce VERIFIED — it is a fail-closed property. A consensus failure does not cascade to REJECTED because the check was never actually evaluated.
