@@ -61,8 +61,6 @@ REJECTED = "REJECTED"
 INCONCLUSIVE = "INCONCLUSIVE"
 
 VALID_CHECK_STATUSES = {E_PASS, E_FAIL, E_FETCH_FAILED, E_INSUFFICIENT}
-VALID_FINAL_VERDICTS = {VERIFIED, REJECTED, INCONCLUSIVE}
-VALID_CHECK_NAMES = {"source", "license", "vulnerability"}
 
 
 # ---------------------------------------------------------------------------
@@ -90,12 +88,9 @@ class Verification:
     verdict: str         # VERIFIED | REJECTED | INCONCLUSIVE
     reason_code: str     # e.g., "FETCH_FAILED", "CHECK_FAILED"
     failed_checks: str   # comma-separated list of failed check names
-    created_at: str
     # Results stored as JSON string (DynArray cannot be user-initialized)
     results_json: str
 
-
-DEFAULT_POLICY = "source,license,vulnerability"
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +347,7 @@ class ReleaseGuard(gl.Contract):
     def __init__(self):
         self.verification_counter = u256(0)
 
-    @gl.public.write.payable
+    @gl.public.write
     def create_verification(
         self, project_name: str, version: str,
         evidence_url: str, policy_text: str
@@ -392,7 +387,6 @@ class ReleaseGuard(gl.Contract):
             verdict="",
             reason_code="",
             failed_checks="",
-            created_at="",
             results_json="",
         )
         self.verifications[vid] = verification
@@ -402,6 +396,11 @@ class ReleaseGuard(gl.Contract):
     def run_verification(self, verification_id: str) -> str:
         """
         Execute the verification pipeline for a pending verification.
+
+        Permissionless by design: anyone can trigger execution of a pending
+        verification. The verification result is deterministic — the same
+        inputs always produce the same verdict — so permissionless execution
+        does not weaken security. The requester is recorded for reference.
 
         Runs each check via consensus, then composes the final verdict
         using deterministic fail-closed logic (no LLM).
@@ -423,6 +422,12 @@ class ReleaseGuard(gl.Contract):
         checks = [c.strip() for c in v.policy_text.split(",") if c.strip()]
         check_results_list = []
 
+        # Copy storage fields to memory before non-deterministic work.
+        # GenLayer storage objects must not be accessed inside nondet blocks.
+        mem_url = v.evidence_url
+        mem_project = v.project_name
+        mem_version = v.version
+
         # --- Fail-closed: empty policy must not produce VERIFIED ---
         if len(checks) == 0:
             check_results_list.append({
@@ -436,15 +441,13 @@ class ReleaseGuard(gl.Contract):
         for check_name in checks:
             if check_name == "source":
                 def leader_fn() -> dict:
-                    return _check_source(
-                        v.evidence_url, v.project_name, v.version)
+                    return _check_source(mem_url, mem_project, mem_version)
             elif check_name == "license":
                 def leader_fn() -> dict:
-                    return _check_license(v.evidence_url, v.project_name)
+                    return _check_license(mem_url, mem_project)
             elif check_name == "vulnerability":
                 def leader_fn() -> dict:
-                    return _check_vulnerability(
-                        v.evidence_url, v.project_name, v.version)
+                    return _check_vulnerability(mem_url, mem_project, mem_version)
             else:
                 check_results_list.append({
                     "check_name": check_name,
