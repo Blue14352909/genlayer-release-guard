@@ -355,8 +355,8 @@ def test_freshness_fail_exceeds_limit(direct_deploy, direct_vm):
     assert "1800" in result["reason"] or "exceeds" in result["reason"]
 
 
-def test_freshness_exact_boundary_passes(direct_deploy, direct_vm):
-    """Evidence exactly at max_age_days produces PASS (<= is allowed)."""
+def test_freshness_exact_boundary_fails(direct_deploy, direct_vm):
+    """Evidence exactly at max_age_days produces FAIL (>= means boundary is rejected)."""
     contract = direct_deploy("contracts/freshness_check.py")
     direct_vm.mock_web(
         ".*pypi.org.*",
@@ -369,7 +369,7 @@ def test_freshness_exact_boundary_passes(direct_deploy, direct_vm):
     result = contract.verify(
         "https://pypi.org/project/test/1.0.0/",
         "TestProject", "1.0.0", "365")
-    assert result["status"] == "PASS"
+    assert result["status"] == "FAIL"
 
 
 def test_freshness_fail_at_boundary(direct_deploy, direct_vm):

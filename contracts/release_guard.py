@@ -278,7 +278,7 @@ def _compose_verdict_deterministic(check_results: list) -> dict:
         1. All checks must PASS for VERIFIED
         2. Any check FAIL → REJECTED
         3. FETCH_FAILED or INSUFFICIENT → INCONCLUSIVE (never VERIFIED)
-        4. Consensus failure (exception during check) → FAIL → REJECTED
+        4. Consensus failure (exception during check) → INSUFFICIENT → INCONCLUSIVE
     """
     # Empty check list: no checks ran → INCONCLUSIVE (fail closed)
     if len(check_results) == 0:
@@ -338,6 +338,12 @@ class ReleaseGuard(gl.Contract):
     Composes verification primitives with deterministic, fail-closed
     verdict composition. No LLM is used for the final verdict — the
     composition logic is pure code with explicit invariants.
+
+    Supported orchestrator policies: {"source", "license", "vulnerability"}.
+    No other policies are wired. Unknown policy names fail closed.
+    Other standalone primitives (freshness, version, corroboration,
+    semantic) exist in this repository but are NOT executed by this
+    orchestrator.
     """
 
     verifications: TreeMap[str, Verification]

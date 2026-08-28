@@ -24,9 +24,9 @@ Pass these as a comma-separated string: `"source,license,vulnerability"`.
 
 Empty or invalid policies fail closed (INCONCLUSIVE, never VERIFIED).
 
-## Standalone primitives
+## Standalone primitives (not wired into orchestrator)
 
-7 standalone contracts, each usable independently:
+7 standalone contracts, each usable independently. These are NOT executed by the ReleaseGuard orchestrator — they are reusable building blocks only:
 
 | Contract | Checks | Consensus pattern |
 |---|---|---|

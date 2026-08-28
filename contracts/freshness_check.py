@@ -140,7 +140,7 @@ def _derive_verdict(extracted: dict, max_age_days: int) -> dict:
                 "reason": f"Non-numeric days_since_publication: {days_raw}"}
 
     # Enforce max_age_days: evidence must not be older than the limit
-    if days_since > max_age_days:
+    if days_since >= max_age_days:
         return {"status": E_FAIL,
                 "observed_date": date_str,
                 "reason": (f"Evidence is {days_since} days old, "

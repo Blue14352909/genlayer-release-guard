@@ -3,7 +3,11 @@ Root conftest: patches gltest's temp-file stdin injection for Windows.
 
 On Windows, os.unlink() fails with WinError 32 when fd 0 (stdin) still
 points to the temp file. The fix: skip the unlink on Windows. The OS
- cleans up temp files on process exit.
+cleans up temp files on process exit.
+
+NOTE: This patch is required for direct-mode tests to run on Windows.
+It is NOT needed on Linux/macOS (CI runs on ubuntu-latest without this).
+Do not remove this unless the upstream gltest package fixes the issue.
 """
 import os
 import sys
