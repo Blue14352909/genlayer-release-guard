@@ -113,7 +113,10 @@ def _derive_verdict(extracted: dict, project_name: str,
     This is the stable comparison logic — both leader and validator
     run this same function on their independently extracted facts.
     """
-    if not extracted.get("page_has_release_content", False):
+    has_content = extracted.get("page_has_release_content", False)
+    if not isinstance(has_content, bool):
+        has_content = str(has_content).lower() == "true"
+    if not has_content:
         return {"status": E_FAIL, "reason": "No release content observed"}
 
     observed_project = str(extracted.get("observed_project", "")).strip()
@@ -125,9 +128,12 @@ def _derive_verdict(extracted: dict, project_name: str,
         == project_name.lower().replace(" ", "")
     ) if observed_project else False
 
-    # Version match — check if claimed version appears in observed
+    # Version match — require exact version string (not substring)
+    # Normalize: strip leading 'v', compare exact segments
+    def _normalize_ver(v: str) -> str:
+        return v.strip().lstrip("vV").lower()
     version_match = (
-        version.lower() in observed_version.lower()
+        _normalize_ver(observed_version) == _normalize_ver(version)
     ) if observed_version else False
 
     if project_match and version_match:

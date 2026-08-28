@@ -123,12 +123,44 @@ def _fetch_source(url: str) -> str:
 
 def _derive_verdict(extracted: dict) -> dict:
     """Derive categorical verdict from extracted corroboration data."""
-    confirming = int(extracted.get("sources_confirming", 0))
-    total = int(extracted.get("sources_total", 0))
     holds = extracted.get("corroboration_holds", False)
-
     if not isinstance(holds, bool):
         holds = str(holds).lower() == "true"
+
+    for field_name in ("sources_confirming", "sources_total"):
+        val = extracted.get(field_name, 0)
+        if isinstance(val, bool):
+            return {"status": E_INSUFFICIENT,
+                    "sources_confirming": 0, "sources_total": 0,
+                    "reason": f"Boolean {field_name} is not valid"}
+        if isinstance(val, float) and val != int(val):
+            return {"status": E_INSUFFICIENT,
+                    "sources_confirming": 0, "sources_total": 0,
+                    "reason": f"Fractional {field_name}: {val}"}
+    try:
+        confirming = int(extracted.get("sources_confirming", 0))
+    except (ValueError, TypeError):
+        return {"status": E_INSUFFICIENT,
+                "sources_confirming": 0, "sources_total": 0,
+                "reason": "Non-integer sources_confirming"}
+    try:
+        total = int(extracted.get("sources_total", 0))
+    except (ValueError, TypeError):
+        return {"status": E_INSUFFICIENT,
+                "sources_confirming": 0, "sources_total": 0,
+                "reason": "Non-integer sources_total"}
+    if confirming < 0 or total < 0:
+        return {"status": E_INSUFFICIENT,
+                "sources_confirming": confirming, "sources_total": total,
+                "reason": f"Negative counts: confirming={confirming}, total={total}"}
+    if confirming > total and total > 0:
+        return {"status": E_INSUFFICIENT,
+                "sources_confirming": confirming, "sources_total": total,
+                "reason": f"Confirming ({confirming}) > total ({total})"}
+    if total == 0:
+        return {"status": E_INSUFFICIENT,
+                "sources_confirming": 0, "sources_total": 0,
+                "reason": "No sources total"}
 
     if holds and confirming >= 2:
         return {"status": E_PASS,

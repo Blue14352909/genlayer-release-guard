@@ -132,12 +132,24 @@ def _derive_verdict(extracted: dict, max_age_days: int) -> dict:
         return {"status": E_INSUFFICIENT,
                 "observed_date": date_str,
                 "reason": "days_since_publication not provided by evaluator"}
+    if isinstance(days_raw, bool):
+        return {"status": E_INSUFFICIENT,
+                "observed_date": date_str,
+                "reason": f"Boolean days_since_publication is not valid"}
+    if isinstance(days_raw, float) and days_raw != int(days_raw):
+        return {"status": E_INSUFFICIENT,
+                "observed_date": date_str,
+                "reason": f"Fractional days_since_publication: {days_raw}"}
     try:
         days_since = int(days_raw)
     except (ValueError, TypeError):
         return {"status": E_INSUFFICIENT,
                 "observed_date": date_str,
                 "reason": f"Non-numeric days_since_publication: {days_raw}"}
+    if days_since < 0:
+        return {"status": E_INSUFFICIENT,
+                "observed_date": date_str,
+                "reason": f"Negative days_since_publication: {days_since}"}
 
     # Enforce max_age_days: evidence must not be older than the limit
     if days_since >= max_age_days:
@@ -193,7 +205,13 @@ class FreshnessCheck(gl.Contract):
             try:
                 days = int(max_age_days.strip())
             except ValueError:
-                days = 90
+                return {"status": E_INSUFFICIENT,
+                        "observed_date": "",
+                        "reason": f"Invalid max_age_days: {max_age_days}"}
+        if days <= 0:
+            return {"status": E_INSUFFICIENT,
+                    "observed_date": "",
+                    "reason": f"max_age_days must be positive, got {days}"}
 
         def leader_fn() -> dict:
             try:

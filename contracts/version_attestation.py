@@ -112,7 +112,10 @@ def _derive_verdict(extracted: dict) -> dict:
     """Derive categorical verdict from extracted facts."""
     version_found = extracted.get("version_found", False)
     if not isinstance(version_found, bool):
-        version_found = str(version_found).lower() == "true"
+        return {"status": E_INSUFFICIENT,
+                "version_found": False,
+                "observed_versions": str(extracted.get("observed_versions", "")),
+                "reason": f"Invalid version_found type: {type(version_found).__name__}"}
 
     return {
         "status": E_PASS if version_found else E_FAIL,

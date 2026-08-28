@@ -116,6 +116,14 @@ def _parse_json_response(raw) -> dict:
 
 def _derive_verdict(extracted: dict, allowed_list: list) -> dict:
     """Derive categorical verdict from extracted license."""
+    license_text_observed = extracted.get("license_text_observed", False)
+    if not isinstance(license_text_observed, bool):
+        license_text_observed = str(license_text_observed).lower() == "true"
+    if not license_text_observed:
+        return {"status": E_INSUFFICIENT,
+                "observed_license": "",
+                "reason": "License text not observed on page"}
+
     license_name = str(extracted.get("license_name", "")).strip()
     if not license_name:
         return {"status": E_INSUFFICIENT,
