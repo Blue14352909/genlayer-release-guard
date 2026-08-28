@@ -575,3 +575,51 @@ def test_duplicate_policy_runs_check_twice(
     results = v["results"]
     source_results = [r for r in results if r["check_name"] == "source"]
     assert len(source_results) == 2
+
+
+def test_orchestrator_rejects_truthy_source_flag(
+        direct_deploy, direct_vm, direct_alice):
+    """A string boolean cannot approve a source check."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "TestProject", "observed_version": "1.0.0", '
+        '"page_has_release_content": "false"}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0", "https://github.com/test/project", "source")
+    assert contract.run_verification(vid) == "INCONCLUSIVE"
+
+
+def test_orchestrator_rejects_truthy_license_flag(
+        direct_deploy, direct_vm, direct_alice):
+    """A string boolean cannot approve a license check."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200, "body": "MIT License text."})
+    direct_vm.mock_llm(
+        ".*", '{"license_name": "MIT", "is_permissive": "false"}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0", "https://github.com/test/project", "license")
+    assert contract.run_verification(vid) == "INCONCLUSIVE"
+
+
+def test_orchestrator_rejects_fractional_vulnerability_counts(
+        direct_deploy, direct_vm, direct_alice):
+    """Fractional counts cannot be truncated into a safe result."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*osv.dev.*",
+        {"method": "GET", "status": 200, "body": "Advisory information."})
+    direct_vm.mock_llm(
+        ".*", '{"has_vulnerability_data": true, "critical_count": 0.5, "high_count": 0}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0", "https://osv.dev/list?q=test", "vulnerability")
+    assert contract.run_verification(vid) == "INCONCLUSIVE"

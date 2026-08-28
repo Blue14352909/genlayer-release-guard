@@ -124,6 +124,18 @@ def _parse_json_response(raw) -> dict:
         raise gl.vm.UserError(f"Invalid JSON from evaluator: {e}")
 
 
+def _inconclusive(check_name: str, evidence: str, reason: str) -> dict:
+    """Build a fail-closed result for malformed evaluator output."""
+    return {"check_name": check_name, "status": E_INSUFFICIENT,
+            "evidence": evidence, "reason": reason}
+
+
+def _normalized_version(value: str) -> str:
+    """Normalize the common leading `v` release-tag convention."""
+    normalized = value.strip().lower()
+    return normalized[1:] if normalized.startswith("v") else normalized
+
+
 # ---------------------------------------------------------------------------
 # Individual check implementations
 # ---------------------------------------------------------------------------
@@ -150,11 +162,17 @@ def _check_source(url: str, project_name: str, version: str) -> dict:
     raw_result = gl.nondet.exec_prompt(
         prompt + f"\n\nPage content:\n{content}", response_format="json")
     parsed = _parse_json_response(raw_result)
+    if not isinstance(parsed, dict):
+        return _inconclusive("source", "Response is not a dict",
+                             "Malformed source response")
     has_content = parsed.get("page_has_release_content", False)
+    if not isinstance(has_content, bool):
+        return _inconclusive("source", "Invalid page_has_release_content",
+                             "Source content flag must be a boolean")
     obs_project = str(parsed.get("observed_project", "")).strip()
     obs_version = str(parsed.get("observed_version", "")).strip()
     project_match = obs_project.lower() == project_name.lower()
-    version_match = version.lower() in obs_version.lower()
+    version_match = _normalized_version(version) == _normalized_version(obs_version)
     status = E_PASS if (has_content and project_match and version_match) else E_FAIL
     return {"check_name": "source", "status": status,
             "evidence": f"{obs_project} {obs_version}",
@@ -182,7 +200,13 @@ def _check_license(url: str, project_name: str) -> dict:
     raw_result = gl.nondet.exec_prompt(
         prompt + f"\n\nPage content:\n{content}", response_format="json")
     parsed = _parse_json_response(raw_result)
+    if not isinstance(parsed, dict):
+        return _inconclusive("license", "Response is not a dict",
+                             "Malformed license response")
     is_permissive = parsed.get("is_permissive", False)
+    if not isinstance(is_permissive, bool):
+        return _inconclusive("license", "Invalid is_permissive value",
+                             "License permissiveness must be a boolean")
     license_name = str(parsed.get("license_name", ""))
     status = E_PASS if is_permissive else E_FAIL
     return {"check_name": "license", "status": status,
@@ -196,7 +220,8 @@ def _check_vulnerability(url: str, project_name: str,
     prompt = (
         f"Check for critical/high vulnerabilities in {project_name} {version}.\n"
         f"URL: {url}\n"
-        "Return JSON: {{\"critical_count\": 0, \"high_count\": 0}}"
+        "Return JSON: {{\"has_vulnerability_data\": true/false, "
+        "\"critical_count\": 0, \"high_count\": 0}}"
     )
     try:
         raw = gl.nondet.web.render(url, mode="text")
@@ -219,6 +244,9 @@ def _check_vulnerability(url: str, project_name: str,
                 "evidence": "Response is not a dict",
                 "reason": "Malformed vulnerability response"}
     has_data = parsed.get("has_vulnerability_data", False)
+    if not isinstance(has_data, bool):
+        return _inconclusive("vulnerability", "Invalid has_vulnerability_data",
+                             "Vulnerability-data flag must be a boolean")
     if not has_data:
         return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
                 "evidence": "No vulnerability data reported",
@@ -241,6 +269,9 @@ def _check_vulnerability(url: str, project_name: str,
             return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
                     "evidence": f"Boolean {field_name}: {val}",
                     "reason": f"Boolean {field_name} is not a valid count"}
+        if not isinstance(val, int):
+            return _inconclusive("vulnerability", f"Non-integer {field_name}: {val}",
+                                 f"{field_name} must be an integer")
     try:
         critical = int(parsed["critical_count"])
     except (ValueError, TypeError):

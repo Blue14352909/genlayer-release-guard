@@ -210,7 +210,7 @@ Every primitive follows the same error handling pattern:
 ```
 External failure → FETCH_FAILED (not PASS, not FAIL)
 Empty content    → INSUFFICIENT_EVIDENCE (not PASS, not FAIL)
-LLM malformed    → FAIL (fail closed)
+LLM malformed    → INSUFFICIENT_EVIDENCE (fail closed)
 Consensus fail   → INSUFFICIENT (fail closed)
 ```
 
