@@ -90,8 +90,9 @@ class Verification:
     verdict: str         # VERIFIED | REJECTED | INCONCLUSIVE
     reason_code: str     # e.g., "FETCH_FAILED", "CHECK_FAILED"
     failed_checks: str   # comma-separated list of failed check names
-    results: DynArray[CheckResult]
     created_at: str
+    # Results stored as JSON string (DynArray cannot be user-initialized)
+    results_json: str
 
 
 DEFAULT_POLICY = "source,license,vulnerability"
@@ -227,18 +228,40 @@ def _check_vulnerability(url: str, project_name: str,
         return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
                 "evidence": "No vulnerability data reported",
                 "reason": "Evaluator reported no vulnerability data"}
+    # Explicit field presence check: missing counts are NOT zero.
+    # Missing critical_count or high_count must produce INSUFFICIENT, never PASS.
+    if "critical_count" not in parsed or "high_count" not in parsed:
+        missing = []
+        if "critical_count" not in parsed:
+            missing.append("critical_count")
+        if "high_count" not in parsed:
+            missing.append("high_count")
+        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                "evidence": f"Missing fields: {', '.join(missing)}",
+                "reason": "Vulnerability data incomplete: " + ", ".join(missing) + " missing"}
+    # Reject booleans: int(True)==1 would silently accept them
+    for field_name in ("critical_count", "high_count"):
+        val = parsed[field_name]
+        if isinstance(val, bool):
+            return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                    "evidence": f"Boolean {field_name}: {val}",
+                    "reason": f"Boolean {field_name} is not a valid count"}
     try:
-        critical = int(parsed.get("critical_count", 0))
+        critical = int(parsed["critical_count"])
     except (ValueError, TypeError):
         return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
-                "evidence": "Non-integer critical_count",
+                "evidence": f"Non-integer critical_count: {parsed['critical_count']}",
                 "reason": "Malformed critical_count in vulnerability data"}
     try:
-        high = int(parsed.get("high_count", 0))
+        high = int(parsed["high_count"])
     except (ValueError, TypeError):
         return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
-                "evidence": "Non-integer high_count",
+                "evidence": f"Non-integer high_count: {parsed['high_count']}",
                 "reason": "Malformed high_count in vulnerability data"}
+    if critical < 0 or high < 0:
+        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
+                "evidence": f"Negative count: critical={critical}, high={high}",
+                "reason": "Negative vulnerability counts are invalid"}
     status = E_PASS if (critical == 0 and high == 0) else E_FAIL
     return {"check_name": "vulnerability", "status": status,
             "evidence": f"{critical} critical, {high} high",
@@ -342,8 +365,8 @@ class ReleaseGuard(gl.Contract):
             raise gl.vm.UserError("Version required")
         if not evidence_url or not evidence_url.strip():
             raise gl.vm.UserError("Evidence URL required")
-        if not policy_text or not policy_text.strip():
-            policy_text = DEFAULT_POLICY
+        # Empty policy is valid — the orchestrator handles it as a fail-closed
+        # path (no checks = INCONCLUSIVE). Do NOT default to a policy here.
 
         self.verification_counter = self.verification_counter + 1
         vid = f"v-{self.verification_counter}"
@@ -359,8 +382,8 @@ class ReleaseGuard(gl.Contract):
             verdict="",
             reason_code="",
             failed_checks="",
-            results=DynArray[CheckResult](),
             created_at="",
+            results_json="",
         )
         self.verifications[vid] = verification
         return vid
@@ -462,13 +485,7 @@ class ReleaseGuard(gl.Contract):
         verdict_data = _compose_verdict_deterministic(check_results_list)
 
         # --- Store results ---
-        for cr in check_results_list:
-            v.results.append(CheckResult(
-                check_name=cr["check_name"],
-                status=cr["status"],
-                evidence=cr["evidence"],
-                reason=cr["reason"],
-            ))
+        v.results_json = json.dumps(check_results_list)
 
         v.verdict = verdict_data["verdict"]
         v.reason_code = verdict_data["reason_code"]
@@ -492,11 +509,7 @@ class ReleaseGuard(gl.Contract):
             "verdict": v.verdict,
             "reason_code": v.reason_code,
             "failed_checks": v.failed_checks,
-            "results": [
-                {"check_name": r.check_name, "status": r.status,
-                 "evidence": r.evidence, "reason": r.reason}
-                for r in v.results
-            ],
+            "results": json.loads(v.results_json) if v.results_json else [],
         }
 
     @gl.public.view
@@ -516,7 +529,7 @@ class ReleaseGuard(gl.Contract):
             raise gl.vm.UserError("Verification not found")
         v = self.verifications[verification_id]
         return [
-            {"check_name": r.check_name, "status": r.status,
-             "evidence": r.evidence, "reason": r.reason}
-            for r in v.results
+            {"check_name": r["check_name"], "status": r["status"],
+             "evidence": r["evidence"], "reason": r["reason"]}
+            for r in (json.loads(v.results_json) if v.results_json else [])
         ]

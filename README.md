@@ -139,15 +139,30 @@ Direct-mode tests use mocked web/LLM responses and run against the local GenLaye
 pytest tests/direct/ -v
 ```
 
+This runs 57 tests covering:
+- Empty/malformed policy fail-closed behavior
+- Vulnerability data validation (missing fields, booleans, nulls, negatives)
+- Freshness max_age_days enforcement
+- Orchestrator verdict composition
+- Individual check primitives (source, license, vulnerability)
+
 Integration tests require GenLayer Studio running (`genlayer up`):
 
 ```bash
 gltest tests/integration/test_release_guard_studio.py
 ```
 
-## Platform notes
+## Reproducible setup
 
-Direct-mode tests have been verified on Windows with the GenLayer testing suite. If you encounter temporary-file permission errors on Windows, this is a known gltest issue unrelated to the contract logic.
+**Python:** 3.12  
+**OS:** Linux (CI), Windows (local, with conftest.py patch)  
+**Dependencies:** genlayer-py v0.18, genlayer-test v0.29, genvm-linter main  
+**Test command:** `pytest tests/direct/ -v`  
+**Lint command:** `genvm-lint contracts/<name>.py`
+
+A `conftest.py` at the repo root patches a known gltest Windows temp-file issue (WinError 32 in `_inject_message_to_fd0`). This is not present on Linux/CI.
+
+GitHub Actions CI runs on `ubuntu-latest` with Python 3.12 to provide a reproducible passing environment.
 
 ## Deployment
 

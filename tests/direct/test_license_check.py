@@ -15,55 +15,53 @@ def test_license_check_empty_url(direct_deploy):
 
 
 def test_license_check_pass_mit(direct_deploy, direct_vm):
-    """MIT license returns PASS with default allowlist."""
+    """MIT license returns PASS."""
     contract = direct_deploy("contracts/license_check.py")
     direct_vm.mock_web(
-        "https://github.com/test/project/blob/main/LICENSE",
-        "MIT License\n\nCopyright (c) 2024 Test Project\n\n"
-        "Permission is hereby granted, free of charge, to any person "
-        "obtaining a copy of this software...",
-    )
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "MIT License - Copyright 2024"})
     direct_vm.mock_llm(
-        '{"status": "PASS", "reason": "MIT license detected", '
-        '"observed_license": "MIT"}'
-    )
+        ".*",
+        '{"license_name": "MIT", "license_text_observed": true, '
+        '"reason": "MIT license found"}')
     result = contract.verify(
-        "https://github.com/test/project/blob/main/LICENSE",
-        "TestProject", "")
+        "https://github.com/test/project",
+        "TestProject", "MIT")
     assert result["status"] == "PASS"
-    assert result["evidence"] == "MIT"
+    assert result["observed_license"] == "MIT"
 
 
 def test_license_check_fail_gpl(direct_deploy, direct_vm):
-    """GPL license returns FAIL with default allowlist."""
+    """GPL license returns FAIL."""
     contract = direct_deploy("contracts/license_check.py")
     direct_vm.mock_web(
-        "https://github.com/test/project/blob/main/LICENSE",
-        "GNU GENERAL PUBLIC LICENSE Version 3",
-    )
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "GNU General Public License v3.0"})
     direct_vm.mock_llm(
-        '{"status": "FAIL", "reason": "GPL v3 not in allowlist", '
-        '"observed_license": "GPL-3.0"}'
-    )
+        ".*",
+        '{"license_name": "GPL-3.0", "license_text_observed": true, '
+        '"reason": "GPL license found"}')
     result = contract.verify(
-        "https://github.com/test/project/blob/main/LICENSE",
-        "TestProject", "")
+        "https://github.com/test/project",
+        "TestProject", "MIT")
     assert result["status"] == "FAIL"
 
 
 def test_license_check_custom_allowlist(direct_deploy, direct_vm):
-    """Custom allowlist is respected."""
+    """Custom allowlist accepts specified licenses."""
     contract = direct_deploy("contracts/license_check.py")
     direct_vm.mock_web(
-        "https://github.com/test/project/blob/main/LICENSE",
-        "MIT License\n\nPermission is hereby granted...",
-    )
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Apache License 2.0"})
     direct_vm.mock_llm(
-        '{"status": "PASS", "reason": "MIT in custom allowlist", '
-        '"observed_license": "MIT"}'
-    )
+        ".*",
+        '{"license_name": "Apache-2.0", "license_text_observed": true, '
+        '"reason": "Apache license found"}')
     result = contract.verify(
-        "https://github.com/test/project/blob/main/LICENSE",
+        "https://github.com/test/project",
         "TestProject", "MIT,Apache-2.0")
     assert result["status"] == "PASS"
 
@@ -71,8 +69,7 @@ def test_license_check_custom_allowlist(direct_deploy, direct_vm):
 def test_license_check_fetch_failure(direct_deploy, direct_vm):
     """Unreachable URL returns FETCH_FAILED."""
     contract = direct_deploy("contracts/license_check.py")
-    direct_vm.mock_web_fail("https://down.example.com/license")
     result = contract.verify(
         "https://down.example.com/license",
-        "TestProject", "")
+        "TestProject", "MIT")
     assert result["status"] == "FETCH_FAILED"
