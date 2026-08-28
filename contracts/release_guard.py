@@ -301,6 +301,10 @@ def _compose_verdict_deterministic(check_results: list) -> dict:
         elif status in (E_FETCH_FAILED, E_INSUFFICIENT):
             inconclusive_checks.append(name)
             all_pass = False
+        elif status not in VALID_CHECK_STATUSES:
+            # Unknown status — fail closed, treat as inconclusive
+            inconclusive_checks.append(name)
+            all_pass = False
 
     # Hard invariant: FETCH_FAILED → INCONCLUSIVE → NEVER VERIFIED
     if all_pass and len(failed_checks) == 0 and len(inconclusive_checks) == 0:
