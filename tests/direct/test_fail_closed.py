@@ -514,3 +514,64 @@ def test_consensus_failure_produces_inconclusive(
     assert result == "INCONCLUSIVE"
     v = contract.get_verification(vid)
     assert v["verdict"] == "INCONCLUSIVE"
+
+
+def test_mixed_inconclusive_rejected_pass_produces_rejected(
+        direct_deploy, direct_vm, direct_alice):
+    """Mixed results: source=PASS, license=REJECTED, vuln=INCONCLUSIVE.
+    Any FAIL in the mix produces REJECTED, not INCONCLUSIVE."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    # Source: PASS — page contains matching project/version
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "TestProject", '
+        '"observed_version": "1.0.0", '
+        '"page_has_release_content": true}')
+    # License: REJECTED — non-permissive license
+    direct_vm.mock_llm(
+        ".*",
+        '{"license_name": "GPL-3.0", "is_permissive": false}')
+    # Vulnerability: INCONCLUSIVE — no mock → FETCH_FAILED
+    vid = contract.create_verification(
+        "TestProject", "1.0.0",
+        "https://github.com/test/project",
+        "source,license,vulnerability")
+    result = contract.run_verification(vid)
+    assert result == "REJECTED"
+    v = contract.get_verification(vid)
+    assert v["verdict"] == "REJECTED"
+    assert "license" in v["failed_checks"]
+
+
+def test_duplicate_policy_runs_check_twice(
+        direct_deploy, direct_vm, direct_alice):
+    """Duplicate policy entries ('source,source') run the check twice.
+    Both should PASS if evidence is valid, producing VERIFIED."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "TestProject", '
+        '"observed_version": "1.0.0", '
+        '"page_has_release_content": true}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0",
+        "https://github.com/test/project",
+        "source,source")
+    result = contract.run_verification(vid)
+    # Both source checks PASS → VERIFIED
+    assert result == "VERIFIED"
+    v = contract.get_verification(vid)
+    # Both results should be in the results list
+    results = v["results"]
+    source_results = [r for r in results if r["check_name"] == "source"]
+    assert len(source_results) == 2
