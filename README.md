@@ -139,7 +139,7 @@ Direct-mode tests use mocked web/LLM responses and run against the local GenLaye
 pytest tests/direct/ -v
 ```
 
-This runs 57 tests covering:
+This runs 59 tests covering:
 - Empty/malformed policy fail-closed behavior
 - Vulnerability data validation (missing fields, booleans, nulls, negatives)
 - Freshness max_age_days enforcement
@@ -156,7 +156,7 @@ gltest tests/integration/test_release_guard_studio.py
 
 **Python:** 3.12  
 **OS:** Linux (CI), Windows (local, with conftest.py patch)  
-**Dependencies:** genlayer-py v0.18, genlayer-test v0.29, genvm-linter main  
+**Dependencies:** genlayer-py v0.18, genlayer-test v0.29, genvm-linter v0.11.0  
 **Test command:** `pytest tests/direct/ -v`  
 **Lint command:** `genvm-lint contracts/<name>.py`
 

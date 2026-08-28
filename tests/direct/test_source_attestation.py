@@ -67,3 +67,16 @@ def test_source_attestation_fetch_failure(direct_deploy, direct_vm):
         "https://down.example.com",
         "TestProject", "1.0.0")
     assert result["status"] == "FETCH_FAILED"
+
+
+def test_source_attestation_insufficient_content(direct_deploy, direct_vm):
+    """Too-short page content returns INSUFFICIENT_EVIDENCE."""
+    contract = direct_deploy("contracts/source_attestation.py")
+    direct_vm.mock_web(
+        ".*example.com.*",
+        {"method": "GET", "status": 200,
+         "body": "<html><body></body></html>"})
+    result = contract.verify(
+        "https://example.com/empty",
+        "TestProject", "1.0.0")
+    assert result["status"] == "INSUFFICIENT_EVIDENCE"

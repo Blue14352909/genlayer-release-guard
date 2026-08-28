@@ -477,10 +477,13 @@ class ReleaseGuard(gl.Contract):
                     "reason": str(result.get("reason", "")),
                 })
             except Exception:
-                # Consensus failure → FAIL (fail closed)
+                # Consensus failure → INSUFFICIENT (fail closed)
+                # Not E_FAIL: the check was never evaluated, so we cannot
+                # claim the evidence failed. We simply couldn't establish
+                # a result, which is the definition of INSUFFICIENT.
                 check_results_list.append({
                     "check_name": check_name,
-                    "status": E_FAIL,
+                    "status": E_INSUFFICIENT,
                     "evidence": "Consensus not reached",
                     "reason": "Validator disagreed or execution failed",
                 })

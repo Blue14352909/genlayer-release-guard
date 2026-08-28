@@ -495,3 +495,22 @@ def test_unknown_check_alone_produces_inconclusive(
         "nonexistent_check")
     result = contract.run_verification(vid)
     assert result != "VERIFIED"
+
+
+def test_consensus_failure_produces_inconclusive(
+        direct_deploy, direct_vm, direct_alice):
+    """Consensus exception (validator disagrees) produces INCONCLUSIVE,
+    not REJECTED. A consensus failure means we couldn't establish a
+    result — it does not mean the evidence was evaluated and failed."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    # No mocks registered → leader_fn will raise MockNotFoundError
+    # → caught by except Exception → E_INSUFFICIENT → INCONCLUSIVE
+    vid = contract.create_verification(
+        "TestProject", "1.0.0",
+        "https://down.example.com/release",
+        "source")
+    result = contract.run_verification(vid)
+    assert result == "INCONCLUSIVE"
+    v = contract.get_verification(vid)
+    assert v["verdict"] == "INCONCLUSIVE"
