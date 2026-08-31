@@ -623,3 +623,36 @@ def test_orchestrator_rejects_fractional_vulnerability_counts(
     vid = contract.create_verification(
         "TestProject", "1.0.0", "https://osv.dev/list?q=test", "vulnerability")
     assert contract.run_verification(vid) == "INCONCLUSIVE"
+
+
+def test_orchestrator_missing_vulnerability_counts_are_inconclusive(
+        direct_deploy, direct_vm, direct_alice):
+    """Missing counts with has_vulnerability_data=true cannot verify."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*osv.dev.*",
+        {"method": "GET", "status": 200, "body": "Advisory information."})
+    direct_vm.mock_llm(".*", '{"has_vulnerability_data": true}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0", "https://osv.dev/list?q=test", "vulnerability")
+    assert contract.run_verification(vid) == "INCONCLUSIVE"
+    record = contract.get_verification(vid)
+    assert record["results"][0]["status"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_orchestrator_uses_visible_release_facts_when_llm_is_unknown(
+        direct_deploy, direct_vm, direct_alice):
+    """Exact page facts safely handle an LLM's unknown source extraction."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*pypi.org.*",
+        {"method": "GET", "status": 200,
+         "body": "requests 2.31.0 release information and package metadata."})
+    direct_vm.mock_llm(
+        ".*", '{"observed_project": "unknown", "observed_version": "unknown", '
+        '"page_has_release_content": false}')
+    vid = contract.create_verification(
+        "requests", "2.31.0", "https://pypi.org/project/requests/2.31.0/", "source")
+    assert contract.run_verification(vid) == "VERIFIED"

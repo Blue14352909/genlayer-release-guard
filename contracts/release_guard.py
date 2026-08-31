@@ -107,6 +107,29 @@ def _sanitize_content(raw: str, max_len: int = 4000) -> str:
     return cleaned[:max_len]
 
 
+def _fetch_page_text(url: str) -> str:
+    """Fetch browser-rendered text first (cleaner for LLM), fall back to static HTML."""
+    try:
+        raw = gl.nondet.web.render(url, mode="text")
+        content = _sanitize_content(str(raw))
+        if content:
+            return content
+    except Exception:
+        pass
+
+    try:
+        response = gl.nondet.web.get(url)
+        body = response.body
+        text = body.decode("utf-8") if isinstance(body, bytes) else str(body)
+        content = _sanitize_content(text)
+        if content:
+            return content
+    except Exception:
+        pass
+
+    return ""
+
+
 def _parse_json_response(raw) -> dict:
     """Parse LLM JSON output."""
     if isinstance(raw, dict):
@@ -136,6 +159,24 @@ def _normalized_version(value: str) -> str:
     return normalized[1:] if normalized.startswith("v") else normalized
 
 
+def _page_contains_claim(content: str, project_name: str, version: str) -> bool:
+    """Check exact release facts visible in the fetched source text."""
+    project = re.escape(project_name.strip())
+    normalized_version = re.escape(_normalized_version(version))
+    boundary = r"(?<![A-Za-z0-9_-])"
+    end_boundary = r"(?![A-Za-z0-9_-])"
+    project_present = re.search(
+        boundary + project + end_boundary, content, flags=re.IGNORECASE)
+    version_present = re.search(
+        boundary + r"v?" + normalized_version + end_boundary,
+        content, flags=re.IGNORECASE)
+    return bool(project_present and version_present)
+
+
+def _missing_observation(value: str) -> bool:
+    return value.strip().lower() in ("", "unknown", "n/a", "none")
+
+
 # ---------------------------------------------------------------------------
 # Individual check implementations
 # ---------------------------------------------------------------------------
@@ -149,13 +190,11 @@ def _check_source(url: str, project_name: str, version: str) -> dict:
         "\"observed_version\": \"ver\", "
         "\"page_has_release_content\": true/false}}"
     )
-    try:
-        raw = gl.nondet.web.render(url, mode="text")
-        content = _sanitize_content(str(raw))
-    except Exception:
+    content = _fetch_page_text(url)
+    if not content:
         return {"check_name": "source", "status": E_FETCH_FAILED,
                 "evidence": "Web retrieval failed",
-                "reason": "Could not render URL"}
+                "reason": "Could not retrieve usable page content"}
     if not content or len(content.strip()) < 20:
         return {"check_name": "source", "status": E_INSUFFICIENT,
                 "evidence": "Page too short", "reason": "Insufficient evidence"}
@@ -173,6 +212,17 @@ def _check_source(url: str, project_name: str, version: str) -> dict:
     obs_version = str(parsed.get("observed_version", "")).strip()
     project_match = obs_project.lower() == project_name.lower()
     version_match = _normalized_version(version) == _normalized_version(obs_version)
+    page_claim_present = _page_contains_claim(content, project_name, version)
+
+    # Some registries expose stable release facts in page text but an LLM may
+    # still return placeholders such as "unknown". Use only exact, visible
+    # project/version matches as a fallback; explicit non-matching facts still
+    # fail rather than being overridden.
+    if (_missing_observation(obs_project) or _missing_observation(obs_version)):
+        if page_claim_present:
+            return {"check_name": "source", "status": E_PASS,
+                    "evidence": f"{project_name} {version}",
+                    "reason": "Exact project and version found in page text"}
     status = E_PASS if (has_content and project_match and version_match) else E_FAIL
     return {"check_name": "source", "status": status,
             "evidence": f"{obs_project} {obs_version}",
@@ -187,13 +237,11 @@ def _check_license(url: str, project_name: str) -> dict:
         "Return JSON: {{\"license_name\": \"MIT\", "
         "\"is_permissive\": true/false}}"
     )
-    try:
-        raw = gl.nondet.web.render(url, mode="text")
-        content = _sanitize_content(str(raw))
-    except Exception:
+    content = _fetch_page_text(url)
+    if not content:
         return {"check_name": "license", "status": E_FETCH_FAILED,
                 "evidence": "Web retrieval failed",
-                "reason": "Could not render URL"}
+                "reason": "Could not retrieve usable page content"}
     if not content:
         return {"check_name": "license", "status": E_INSUFFICIENT,
                 "evidence": "No content", "reason": "Insufficient evidence"}
@@ -223,13 +271,11 @@ def _check_vulnerability(url: str, project_name: str,
         "Return JSON: {{\"has_vulnerability_data\": true/false, "
         "\"critical_count\": 0, \"high_count\": 0}}"
     )
-    try:
-        raw = gl.nondet.web.render(url, mode="text")
-        content = _sanitize_content(str(raw))
-    except Exception:
+    content = _fetch_page_text(url)
+    if not content:
         return {"check_name": "vulnerability", "status": E_FETCH_FAILED,
                 "evidence": "Advisory unreachable",
-                "reason": "Cannot verify vulnerability status"}
+                "reason": "Cannot retrieve vulnerability evidence"}
     if not content:
         return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
                 "evidence": "No vulnerability data",
