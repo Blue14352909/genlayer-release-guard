@@ -125,7 +125,9 @@ def _derive_verdict(extracted: dict) -> dict:
     """Derive categorical verdict from extracted corroboration data."""
     holds = extracted.get("corroboration_holds", False)
     if not isinstance(holds, bool):
-        holds = str(holds).lower() == "true"
+        return {"status": E_INSUFFICIENT,
+                "sources_confirming": 0, "sources_total": 0,
+                "reason": "corroboration_holds must be a boolean"}
 
     for field_name in ("sources_confirming", "sources_total"):
         val = extracted.get(field_name, 0)

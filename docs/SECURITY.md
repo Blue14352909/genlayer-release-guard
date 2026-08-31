@@ -142,7 +142,7 @@ Only the leader's result is stored on-chain after consensus. Validator results a
 
 | Method | Access | Enforcement |
 |---|---|---|
-| `create_verification` | Anyone (payable) | None (permissionless) |
+| `create_verification` | Anyone | None (permissionless) |
 | `run_verification` | Anyone | Status check (PENDING only) |
 | `get_verification` | Anyone (view) | None |
 | `get_verdict` | Anyone (view) | None |

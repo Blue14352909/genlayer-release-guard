@@ -237,8 +237,6 @@ class SemanticPolicy(gl.Contract):
             ).get()
             if isinstance(verdict, bool):
                 return verdict
-            if isinstance(verdict, str):
-                return verdict.lower() == "true"
             return False
 
         return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)

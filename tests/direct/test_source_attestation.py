@@ -80,3 +80,17 @@ def test_source_attestation_insufficient_content(direct_deploy, direct_vm):
         "https://example.com/empty",
         "TestProject", "1.0.0")
     assert result["status"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_source_attestation_rejects_string_content_flag(direct_deploy, direct_vm):
+    """A string boolean cannot attest a release source."""
+    contract = direct_deploy("contracts/source_attestation.py")
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject."})
+    direct_vm.mock_llm(
+        ".*", '{"observed_project": "TestProject", "observed_version": "1.0.0", '
+        '"page_has_release_content": "true"}')
+    result = contract.verify("https://github.com/test/project", "TestProject", "1.0.0")
+    assert result["status"] == "INSUFFICIENT_EVIDENCE"

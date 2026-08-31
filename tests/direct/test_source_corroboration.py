@@ -93,3 +93,20 @@ def test_source_corroboration_inconsistent_counts(direct_deploy, direct_vm):
         "https://example.org/release")
     assert result["status"] != "PASS"
     assert result["status"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_source_corroboration_rejects_string_holds_flag(direct_deploy, direct_vm):
+    """A string boolean cannot establish corroboration."""
+    contract = direct_deploy("contracts/source_corroboration.py")
+    direct_vm.mock_web(
+        ".*example.com.*",
+        {"method": "GET", "status": 200, "body": "Release v1.0.0 TestProject"})
+    direct_vm.mock_web(
+        ".*example.org.*",
+        {"method": "GET", "status": 200, "body": "Release v1.0.0 TestProject"})
+    direct_vm.mock_llm(
+        ".*", '{"sources_confirming": 2, "sources_total": 2, '
+        '"corroboration_holds": "true"}')
+    result = contract.verify(
+        "TestProject", "1.0.0", "https://example.com/release", "https://example.org/release")
+    assert result["status"] == "INSUFFICIENT_EVIDENCE"

@@ -73,3 +73,15 @@ def test_license_check_fetch_failure(direct_deploy, direct_vm):
         "https://down.example.com/license",
         "TestProject", "MIT")
     assert result["status"] == "FETCH_FAILED"
+
+
+def test_license_check_rejects_string_observed_flag(direct_deploy, direct_vm):
+    """A string boolean is malformed evidence, not proof of a licence."""
+    contract = direct_deploy("contracts/license_check.py")
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200, "body": "MIT License"})
+    direct_vm.mock_llm(
+        ".*", '{"license_name": "MIT", "license_text_observed": "true"}')
+    result = contract.verify("https://github.com/test/project", "TestProject", "MIT")
+    assert result["status"] == "INSUFFICIENT_EVIDENCE"

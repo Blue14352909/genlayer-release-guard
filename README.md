@@ -27,6 +27,10 @@ release page is appropriate for `source,license`; request `vulnerability`
 only with an advisory page containing version-specific vulnerability data.
 Unavailable evidence returns `INCONCLUSIVE`, never VERIFIED.
 
+For registry and other static pages, the orchestrator first attempts an HTTP
+fetch and falls back to rendered text when needed. It accepts a source claim
+only when the required facts are explicit and validated.
+
 Empty or invalid policies fail closed (INCONCLUSIVE, never VERIFIED).
 
 ## Standalone primitives (not wired into orchestrator)
@@ -144,7 +148,7 @@ Direct-mode tests use mocked web/LLM responses and run against the local GenLaye
 pytest tests/direct/ -v
 ```
 
-This runs 85 tests covering:
+This runs 89 tests covering:
 - Empty/malformed policy fail-closed behavior
 - Vulnerability data validation (missing fields, booleans, nulls, negatives)
 - Freshness max_age_days enforcement

@@ -115,7 +115,8 @@ def _derive_verdict(extracted: dict, project_name: str,
     """
     has_content = extracted.get("page_has_release_content", False)
     if not isinstance(has_content, bool):
-        has_content = str(has_content).lower() == "true"
+        return {"status": E_INSUFFICIENT,
+                "reason": "page_has_release_content must be a boolean"}
     if not has_content:
         return {"status": E_FAIL, "reason": "No release content observed"}
 

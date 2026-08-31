@@ -147,8 +147,7 @@ class Verification:
     verdict: str               # VERIFIED | REJECTED | INCONCLUSIVE
     reason_code: str           # "", "CHECK_FAILED", "FETCH_FAILED", "INSUFFICIENT_EVIDENCE"
     failed_checks: str         # comma-separated failed check names
-    results: DynArray[CheckResult]  # Individual check results
-    created_at: str
+    results_json: str             # Serialized individual check results
 ```
 
 ### Check Result
