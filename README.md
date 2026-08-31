@@ -180,8 +180,8 @@ GitHub Actions CI runs on `ubuntu-latest` with Python 3.12 to provide a reproduc
 
 | Item | Value |
 |---|---|
-| Contract | `0x5Cae8F9B8355c69bC3Ed5777B8C7F59015a193f9` |
-| Deployment transaction | [`0x91ef…9236b`](https://explorer-studio.genlayer.com/tx/0x91ef9d94360c2c30fce5fe7a5976bd182ba2e94fc9623f756269b4d99ef9236b) |
-| Verification transaction | [`0x93b2…36548`](https://explorer-studio.genlayer.com/tx/0x93b2828f7c4036075680be8249267eb518283b2aa3cdcee19a730afb25e36548) |
+| Contract | `0xfFa341Ad1AC8aD5DB23405767be481eDDc8f5a46` |
+| Deployment transaction | [`0xf0be…a73e`](https://explorer-studio.genlayer.com/tx/0xf0be08268d6d471a2316670a53ff7971db64204e00348a22e9fc77f73cb4a73e) |
+| Verification transaction | [`0xf133…3f2b`](https://explorer-studio.genlayer.com/tx/0xf13317be4cb28b184e5521eda04f02ca45fcb0612edbf9c1013f954d9b6e3f2b) |
 | Result | `VERIFIED` — source and license checks passed for `requests` 2.31.0 |
-| Studio | [Import](https://studio.genlayer.com/?import-contract=0x5Cae8F9B8355c69bC3Ed5777B8C7F59015a193f9) |
+| Studio | [Import](https://studio.genlayer.com/?import-contract=0xfFa341Ad1AC8aD5DB23405767be481eDDc8f5a46) |
