@@ -151,7 +151,7 @@ Direct-mode tests use mocked web/LLM responses and run against the local GenLaye
 pytest tests/direct/ -v
 ```
 
-This runs 89 tests covering:
+This runs 91 tests covering:
 - Empty/malformed policy fail-closed behavior
 - Vulnerability data validation (missing fields, booleans, nulls, negatives)
 - Freshness max_age_days enforcement

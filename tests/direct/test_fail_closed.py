@@ -470,6 +470,7 @@ def test_all_pass_produces_verified(direct_deploy, direct_vm, direct_alice):
         '"observed_version": "1.0.0", '
         '"page_has_release_content": true, '
         '"is_permissive": true, '
+        '"license_text_observed": true, '
         '"license_name": "MIT", '
         '"has_vulnerability_data": true, '
         '"critical_count": 0, "high_count": 0}')
@@ -528,14 +529,15 @@ def test_mixed_inconclusive_rejected_pass_produces_rejected(
         {"method": "GET", "status": 200,
          "body": "Release v1.0.0 of TestProject. Download source."})
     direct_vm.mock_llm(
-        ".*",
+        ".*Verify whether this URL genuinely contains a release.*",
         '{"observed_project": "TestProject", '
         '"observed_version": "1.0.0", '
         '"page_has_release_content": true}')
     # License: REJECTED — non-permissive license
     direct_vm.mock_llm(
-        ".*",
-        '{"license_name": "GPL-3.0", "is_permissive": false}')
+        ".*Check the license of project.*",
+        '{"license_name": "GPL-3.0", "license_text_observed": true, '
+        '"is_permissive": false}')
     # Vulnerability: INCONCLUSIVE — no mock → FETCH_FAILED
     vid = contract.create_verification(
         "TestProject", "1.0.0",
@@ -608,6 +610,43 @@ def test_orchestrator_rejects_truthy_license_flag(
     vid = contract.create_verification(
         "TestProject", "1.0.0", "https://github.com/test/project", "license")
     assert contract.run_verification(vid) == "INCONCLUSIVE"
+
+
+def test_orchestrator_requires_observed_license_text(
+        direct_deploy, direct_vm, direct_alice):
+    """A permissive verdict without observed license text cannot approve."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200, "body": "Project release details."})
+    direct_vm.mock_llm(
+        ".*", '{"license_name": "MIT", "license_text_observed": false, '
+        '"is_permissive": true}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0", "https://github.com/test/project", "license")
+    assert contract.run_verification(vid) == "INCONCLUSIVE"
+    record = contract.get_verification(vid)
+    assert record["results"][0]["status"] == "INSUFFICIENT_EVIDENCE"
+
+
+def test_source_fallback_does_not_match_version_component(
+        direct_deploy, direct_vm, direct_alice):
+    """Requested version 2 must not match the component in 11.2.0."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*example.com.*",
+        {"method": "GET", "status": 200,
+         "body": "TestProject release version 11.2.0 information."})
+    direct_vm.mock_llm(
+        ".*", '{"observed_project": "unknown", "observed_version": "unknown", '
+        '"page_has_release_content": false}')
+    vid = contract.create_verification(
+        "TestProject", "2", "https://example.com/release", "source")
+    assert contract.run_verification(vid) == "REJECTED"
+    record = contract.get_verification(vid)
+    assert record["results"][0]["status"] == "FAIL"
 
 
 def test_orchestrator_rejects_fractional_vulnerability_counts(

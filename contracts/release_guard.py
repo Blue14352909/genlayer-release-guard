@@ -165,10 +165,14 @@ def _page_contains_claim(content: str, project_name: str, version: str) -> bool:
     normalized_version = re.escape(_normalized_version(version))
     boundary = r"(?<![A-Za-z0-9_-])"
     end_boundary = r"(?![A-Za-z0-9_-])"
+    # Dots are part of a version token. Without this stricter boundary, a
+    # requested version such as "2" could match the "2" in "11.2.0".
+    version_boundary = r"(?<![A-Za-z0-9_.-])"
+    version_end_boundary = r"(?![A-Za-z0-9_.-])"
     project_present = re.search(
         boundary + project + end_boundary, content, flags=re.IGNORECASE)
     version_present = re.search(
-        boundary + r"v?" + normalized_version + end_boundary,
+        version_boundary + r"v?" + normalized_version + version_end_boundary,
         content, flags=re.IGNORECASE)
     return bool(project_present and version_present)
 
@@ -235,6 +239,7 @@ def _check_license(url: str, project_name: str) -> dict:
         f"Check the license of project {project_name}.\n"
         f"URL: {url}\n"
         "Return JSON: {{\"license_name\": \"MIT\", "
+        "\"license_text_observed\": true/false, "
         "\"is_permissive\": true/false}}"
     )
     content = _fetch_page_text(url)
@@ -242,15 +247,20 @@ def _check_license(url: str, project_name: str) -> dict:
         return {"check_name": "license", "status": E_FETCH_FAILED,
                 "evidence": "Web retrieval failed",
                 "reason": "Could not retrieve usable page content"}
-    if not content:
-        return {"check_name": "license", "status": E_INSUFFICIENT,
-                "evidence": "No content", "reason": "Insufficient evidence"}
     raw_result = gl.nondet.exec_prompt(
         prompt + f"\n\nPage content:\n{content}", response_format="json")
     parsed = _parse_json_response(raw_result)
     if not isinstance(parsed, dict):
         return _inconclusive("license", "Response is not a dict",
                              "Malformed license response")
+    license_text_observed = parsed.get("license_text_observed", False)
+    if not isinstance(license_text_observed, bool):
+        return _inconclusive("license", "Invalid license_text_observed value",
+                             "License-observed flag must be a boolean")
+    if not license_text_observed:
+        return {"check_name": "license", "status": E_INSUFFICIENT,
+                "evidence": "License text not observed",
+                "reason": "Cannot verify license without observed license text"}
     is_permissive = parsed.get("is_permissive", False)
     if not isinstance(is_permissive, bool):
         return _inconclusive("license", "Invalid is_permissive value",
@@ -276,10 +286,6 @@ def _check_vulnerability(url: str, project_name: str,
         return {"check_name": "vulnerability", "status": E_FETCH_FAILED,
                 "evidence": "Advisory unreachable",
                 "reason": "Cannot retrieve vulnerability evidence"}
-    if not content:
-        return {"check_name": "vulnerability", "status": E_INSUFFICIENT,
-                "evidence": "No vulnerability data",
-                "reason": "Insufficient evidence"}
     raw_result = gl.nondet.exec_prompt(
         prompt + f"\n\nPage content:\n{content}", response_format="json")
     parsed = _parse_json_response(raw_result)
