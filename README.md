@@ -17,7 +17,7 @@ The orchestrator (`release_guard.py`) currently wires three checks:
 | Policy name | What it checks |
 |---|---|
 | `source` | Does the URL actually contain the claimed release? |
-| `license` | Is the project license on the allowlist? |
+| `license` | Is the observed project license permissive? |
 | `vulnerability` | Are there known critical/high CVEs? |
 
 Pass these as a comma-separated string: `"source,license,vulnerability"`.
@@ -102,6 +102,9 @@ tests/direct/
   test_vulnerability_check.py
   test_release_guard.py
   test_fail_closed.py       # focused regression tests
+  test_version_attestation.py
+  test_source_corroboration.py
+  test_semantic_policy.py
 tests/integration/
   test_release_guard_studio.py
 docs/
@@ -177,8 +180,8 @@ GitHub Actions CI runs on `ubuntu-latest` with Python 3.12 to provide a reproduc
 
 | Item | Value |
 |---|---|
-| Contract | `0x54877FDcf9cae0A995a7D5CFDE656723bE13a2b4` |
-| TX hash | `0x05a35eeaa977620816acde5b4c4e52bd2e0d0e96d678270a0227deafa87e979e` |
-| Consensus | Accepted (5 validators) |
-| Explorer | [View](https://explorer-studio.genlayer.com/tx/0x05a35eeaa977620816acde5b4c4e52bd2e0d0e96d678270a0227deafa87e979e) |
-| Studio | [Import](https://studio.genlayer.com/?import-contract=0x54877FDcf9cae0A995a7D5CFDE656723bE13a2b4) |
+| Contract | `0x5Cae8F9B8355c69bC3Ed5777B8C7F59015a193f9` |
+| Deployment transaction | [`0x91ef…9236b`](https://explorer-studio.genlayer.com/tx/0x91ef9d94360c2c30fce5fe7a5976bd182ba2e94fc9623f756269b4d99ef9236b) |
+| Verification transaction | [`0x93b2…36548`](https://explorer-studio.genlayer.com/tx/0x93b2828f7c4036075680be8249267eb518283b2aa3cdcee19a730afb25e36548) |
+| Result | `VERIFIED` — source and license checks passed for `requests` 2.31.0 |
+| Studio | [Import](https://studio.genlayer.com/?import-contract=0x5Cae8F9B8355c69bC3Ed5777B8C7F59015a193f9) |
