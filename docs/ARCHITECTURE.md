@@ -156,7 +156,7 @@ class Verification:
 @allow_storage
 @dataclass
 class CheckResult:
-    check_name: str            # e.g., "source_attestation"
+    check_name: str            # e.g., "source"
     status: str                # PASS | FAIL | FETCH_FAILED | INSUFFICIENT_EVIDENCE
     evidence: str              # Observable evidence
     reason: str                # Human-readable explanation

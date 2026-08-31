@@ -27,8 +27,8 @@ release page is appropriate for `source,license`; request `vulnerability`
 only with an advisory page containing version-specific vulnerability data.
 Unavailable evidence returns `INCONCLUSIVE`, never VERIFIED.
 
-For registry and other static pages, the orchestrator first attempts an HTTP
-fetch and falls back to rendered text when needed. It accepts a source claim
+For registry and other static pages, the orchestrator first attempts rendered
+text and falls back to a static HTTP fetch when needed. It accepts a source claim
 only when the required facts are explicit and validated.
 
 Empty or invalid policies fail closed (INCONCLUSIVE, never VERIFIED).
