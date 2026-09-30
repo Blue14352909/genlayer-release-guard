@@ -11,16 +11,16 @@ import {
 
 const STEPS = [
   {
-    title: "Submit release evidence",
-    body: "Provide the project name, version, an HTTPS evidence URL, and the checks you want run. Nothing runs until you sign the transaction.",
+    title: "Set the release claim",
+    body: "Choose the project, version, evidence URL, and checks to run.",
   },
   {
-    title: "GenLayer evaluates the evidence",
-    body: "Independent validators render the page, extract stable facts, derive a categorical verdict, and reach consensus on source, license, and vulnerability evidence.",
+    title: "Evaluate public evidence",
+    body: "GenLayer validators independently assess source, licence, and vulnerability evidence.",
   },
   {
-    title: "Receive a deterministic outcome",
-    body: "The final verdict is composed by deterministic, fail-closed code — VERIFIED, REJECTED, or INCONCLUSIVE. No LLM decides the final verdict.",
+    title: "Read the decision",
+    body: "Deterministic contract logic returns VERIFIED, REJECTED, or INCONCLUSIVE.",
   },
 ];
 
@@ -28,7 +28,7 @@ export default function HomePage() {
   return (
     <div className="mx-auto max-w-6xl px-4">
       {/* Hero */}
-      <section className="pt-16 pb-14 sm:pt-24">
+      <section className="hero-shell pt-16 pb-14 sm:pt-24">
         <span className="chip" style={{ color: "var(--color-accent)" }}>
           GenLayer Studionet · fail-closed attestation
         </span>
@@ -36,11 +36,8 @@ export default function HomePage() {
           Verify software releases before you trust them.
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-muted">
-          ReleaseGuard independently evaluates public release evidence through
-          GenLayer consensus. Each check fetches the evidence page, extracts
-          stable facts, derives a categorical verdict, and requires independent
-          validators to agree. The final outcome is composed by deterministic
-          code — not by a model.
+          Submit public release evidence, select the checks that matter, and
+          inspect an on-chain outcome backed by GenLayer validator consensus.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/new" className="btn btn-primary">
@@ -60,7 +57,7 @@ export default function HomePage() {
       </section>
 
       {/* How it works */}
-      <section aria-labelledby="how" className="py-12">
+      <section aria-labelledby="how" className="py-10">
         <h2 id="how" className="text-2xl font-bold tracking-tight">
           How it works
         </h2>
@@ -84,7 +81,7 @@ export default function HomePage() {
       </section>
 
       {/* Supported checks */}
-      <section aria-labelledby="checks" className="py-12">
+      <section aria-labelledby="checks" className="py-10">
         <h2 id="checks" className="text-2xl font-bold tracking-tight">
           Supported checks
         </h2>
@@ -106,7 +103,7 @@ export default function HomePage() {
       </section>
 
       {/* Fail-closed */}
-      <section aria-labelledby="failclosed" className="py-12">
+      <section aria-labelledby="failclosed" className="py-10">
         <div
           className="card card-pad"
           style={{ borderColor: "rgba(251, 191, 36, 0.4)" }}
@@ -143,18 +140,13 @@ export default function HomePage() {
             </p>
           </div>
           <p className="mt-5 text-xs text-muted">
-            The composition rule is enforced in contract code:{" "}
-            <code className="mono">
-              all PASS → VERIFIED · any FAIL → REJECTED · otherwise INCONCLUSIVE
-            </code>
-            . A fetch failure or consensus failure is recorded as
-            INSUFFICIENT_EVIDENCE, never as PASS.
+            Contract rule: <code className="mono">all PASS → VERIFIED · any FAIL → REJECTED · otherwise INCONCLUSIVE</code>.
           </p>
         </div>
       </section>
 
       {/* Evidence */}
-      <section id="evidence" aria-labelledby="evidence-heading" className="py-12">
+      <section id="evidence" aria-labelledby="evidence-heading" className="py-10">
         <h2 id="evidence-heading" className="text-2xl font-bold tracking-tight">
           Evidence
         </h2>
