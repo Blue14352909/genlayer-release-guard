@@ -46,15 +46,13 @@ export default function HomePage() {
             consensus-backed decision—with no path from uncertainty to VERIFIED.
           </p>
           <div className="mt-9 flex flex-wrap gap-3">
-            <Link href="/new" className="btn btn-primary">
-              Create verification <span aria-hidden="true">→</span>
+            <Link href={`/inspect?id=${EXAMPLE.verificationId}`} className="btn btn-primary">
+              Inspect a real result <span aria-hidden="true">→</span>
             </Link>
-            <Link href={`/inspect?id=${EXAMPLE.verificationId}`} className="btn btn-secondary">
-              Inspect a real result
-            </Link>
+            <ExternalLink href={EVIDENCE_LINKS.verifiedTx} className="btn btn-secondary">View verified transaction</ExternalLink>
           </div>
           <p className="mt-5 max-w-lg text-xs leading-5 text-muted">
-            Creating a verification requires a browser wallet and test GEN on {NETWORK_NAME}.
+            This public demonstration is read-only. It never asks to connect a wallet.
           </p>
         </div>
 

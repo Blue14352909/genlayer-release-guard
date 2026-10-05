@@ -2,10 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { WalletButton } from "./WalletButton";
-
 const NAV = [
-  { href: "/new", label: "New Verification" },
   { href: "/inspect", label: "Inspect Result" },
   { href: "/#evidence", label: "Evidence" },
 ] as const;
@@ -79,9 +76,6 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="ml-auto flex items-center gap-2 md:ml-3">
-          <WalletButton />
-        </div>
       </div>
 
       <nav

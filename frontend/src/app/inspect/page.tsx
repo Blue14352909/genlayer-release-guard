@@ -11,29 +11,18 @@ import { useSearchParams } from "next/navigation";
 import { CheckStatusBadge } from "@/components/CheckStatusBadge";
 import { ErrorCard } from "@/components/ErrorCard";
 import { ExternalLink } from "@/components/ExternalLink";
-import { TxLifecycle, type LifecycleStep } from "@/components/TxLifecycle";
 import { VerdictBadge } from "@/components/VerdictBadge";
 import {
-  CHAIN_ID_HEX,
   CONTRACT_ADDRESS,
   EXAMPLE,
   NETWORK_NAME,
-  txUrl,
 } from "@/lib/config";
 import { normalizeError } from "@/lib/errors";
 import { isHttpsUrl, sanitizeText, truncateMiddle } from "@/lib/format";
-import {
-  createWalletClient,
-  readCheckResults,
-  readVerdict,
-  readVerification,
-  submitRunVerification,
-  waitForDecision,
-} from "@/lib/genlayer";
+import { readCheckResults, readVerdict, readVerification } from "@/lib/genlayer";
 import type { CheckResult, Verification } from "@/lib/types";
-import { useWallet } from "@/lib/wallet-context";
 
-type Phase = "idle" | "loading" | "submitting" | "waiting";
+type Phase = "idle" | "loading";
 
 interface Failure {
   title: string;
@@ -106,7 +95,6 @@ function InspectFallback() {
 }
 
 function InspectView() {
-  const wallet = useWallet();
   const searchParams = useSearchParams();
   const queryId = searchParams.get("id") ?? "";
 
@@ -116,9 +104,6 @@ function InspectView() {
   const [results, setResults] = useState<CheckResult[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [failure, setFailure] = useState<Failure | null>(null);
-
-  const [runHash, setRunHash] = useState<string | null>(null);
-  const [runStatus, setRunStatus] = useState<string | null>(null);
 
   const load = useCallback(async (rawId: string) => {
     const id = rawId.trim();
@@ -167,73 +152,9 @@ function InspectView() {
     };
   }, [queryId, load]);
 
-  async function handleRun() {
-    if (!verification) return;
-    setFailure(null);
-    if (!wallet.available || !wallet.address) {
-      setFailure({
-        title: "Wallet not connected",
-        detail: "Connect a browser wallet before running the verification.",
-      });
-      return;
-    }
-    if (!wallet.isCorrectNetwork) {
-      setFailure({
-        title: "Wrong network",
-        detail: `Switch your wallet to ${NETWORK_NAME} (chain id ${CHAIN_ID_HEX}) first.`,
-      });
-      return;
-    }
-
-    const id = verification.id;
-    try {
-      setRunHash(null);
-      setRunStatus(null);
-      setPhase("submitting");
-      const client = createWalletClient(wallet.address, wallet.provider!);
-      const hash = await submitRunVerification(client, id);
-      if (!hash) {
-        throw new Error("The wallet did not return a transaction hash.");
-      }
-      setRunHash(hash);
-
-      setPhase("waiting");
-      const decision = await waitForDecision(hash, setRunStatus);
-      setRunStatus(decision.statusName);
-      if (decision.execName === "FINISHED_WITH_ERROR") {
-        throw new Error(
-          "The run transaction was decided but execution failed. The stored result was not updated.",
-        );
-      }
-
-      // Refresh only after the decision is available.
-      await load(id);
-      setPhase("idle");
-    } catch (err) {
-      setFailure(normalizeError(err));
-      setPhase("idle");
-    }
-  }
-
   const isPending =
     verification?.status === "PENDING" || verification?.status === "RUNNING";
-  const busy = phase === "loading" || phase === "submitting" || phase === "waiting";
-
-  const runSteps: LifecycleStep[] = [
-    { key: "prep", label: "Transaction prepared", state: runHash ? "done" : phase === "submitting" ? "active" : "idle" },
-    { key: "submitted", label: "Signed in wallet and submitted", detail: runHash ?? undefined, state: runHash ? "done" : "idle" },
-    {
-      key: "decided",
-      label: "Decision reached",
-      detail: runStatus ?? undefined,
-      state:
-        runStatus && ["ACCEPTED", "FINALIZED"].includes(runStatus)
-          ? "done"
-          : phase === "waiting"
-            ? "active"
-            : "idle",
-    },
-  ];
+  const busy = phase === "loading";
 
   const evidenceUrl = verification?.evidence_url ?? "";
   const evidenceIsLink = isHttpsUrl(evidenceUrl);
@@ -331,19 +252,9 @@ function InspectView() {
             {isPending ? (
               <div className="mt-5">
                 <p className="text-sm text-muted">
-                  This verification has not been executed yet. Running it
-                  executes the requested checks through GenLayer consensus.
+                  This public deployment is read-only. It can inspect the
+                  stored result but does not request wallet access or submit transactions.
                 </p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  <button
-                    type="button"
-                    className="btn btn-primary"
-                    onClick={() => void handleRun()}
-                    disabled={busy}
-                  >
-                    {busy ? "Working…" : "Run Verification"}
-                  </button>
-                </div>
               </div>
             ) : null}
           </div>
@@ -391,23 +302,6 @@ function InspectView() {
               <ResultList results={results} />
             </div>
           </div>
-
-          {phase === "submitting" || phase === "waiting" || runHash ? (
-            <div className="card card-pad">
-              <h2 className="text-lg font-semibold">Run transaction</h2>
-              <div className="mt-4">
-                <TxLifecycle steps={runSteps} />
-              </div>
-              {runHash ? (
-                <p className="mt-4 text-sm">
-                  Transaction:{" "}
-                  <ExternalLink href={txUrl(runHash)} className="link">
-                    <span className="mono">{truncateMiddle(runHash, 10, 8)}</span>
-                  </ExternalLink>
-                </p>
-              ) : null}
-            </div>
-          ) : null}
         </div>
       ) : null}
 
