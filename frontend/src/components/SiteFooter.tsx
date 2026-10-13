@@ -1,44 +1,56 @@
-import { CONTRACT_ADDRESS, EVIDENCE_LINKS, NETWORK_NAME } from "@/lib/config";
+import {
+  CONTRACT_ADDRESS,
+  EVIDENCE_LINKS,
+  NETWORK_NAME,
+  addressUrl,
+} from "@/lib/config";
 import { ExternalLink } from "./ExternalLink";
 
 export function SiteFooter() {
   return (
-    <footer className="mt-12 border-t border-line">
-      <div className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:grid-cols-[1fr_auto]">
+    <footer className="mt-16 border-t border-line">
+      <div className="mx-auto grid max-w-5xl gap-8 px-4 py-10 sm:grid-cols-[1.3fr_1fr]">
         <div>
-          <p className="font-semibold tracking-tight">ReleaseGuard</p>
-          <p className="mt-2 max-w-xl text-sm text-muted">
-            A GenLayer Studionet demonstration of fail-closed release verification.
-            VERIFIED is a policy result, not a security audit or guarantee.
+          <p className="font-semibold">ReleaseGuard Console</p>
+          <p className="mt-2 max-w-md text-[0.9375rem] text-muted">
+            A public, read-only workspace for inspecting release-verification
+            results produced by the deployed ReleaseGuard contract on{" "}
+            {NETWORK_NAME}. It is a Studionet demonstration and carries no
+            legal, security, or fitness-for-purpose guarantee.
           </p>
         </div>
-        <div className="space-y-2 text-sm">
-          <p className="text-xs font-semibold tracking-wide text-muted uppercase">
-            Evidence
-          </p>
-          <div>
-            <ExternalLink href={EVIDENCE_LINKS.github}>
-              GitHub repository
-            </ExternalLink>
-          </div>
-          <div>
-            <ExternalLink href={EVIDENCE_LINKS.deployTx}>
-              Studio deployment transaction
-            </ExternalLink>
-          </div>
-          <div>
-            <ExternalLink href={EVIDENCE_LINKS.verifiedTx}>
-              VERIFIED execution transaction
-            </ExternalLink>
-          </div>
-        </div>
+        <nav aria-label="Evidence" className="text-[0.9375rem]">
+          <p className="mono text-muted">Evidence</p>
+          <ul className="mt-3 space-y-2">
+            <li>
+              <ExternalLink href={EVIDENCE_LINKS.github}>
+                GitHub repository
+              </ExternalLink>
+            </li>
+            <li>
+              <ExternalLink href={EVIDENCE_LINKS.deployTx}>
+                Deployment transaction
+              </ExternalLink>
+            </li>
+            <li>
+              <ExternalLink href={EVIDENCE_LINKS.verifiedTx}>
+                Verified execution transaction
+              </ExternalLink>
+            </li>
+            <li>
+              <ExternalLink href={addressUrl(CONTRACT_ADDRESS)}>
+                Deployed contract
+              </ExternalLink>
+            </li>
+          </ul>
+        </nav>
       </div>
       <div className="border-t border-line">
-        <div className="mx-auto flex max-w-6xl flex-wrap gap-x-5 gap-y-1 px-4 py-4 text-xs text-muted">
-          <span>
-            Contract <span className="mono">{CONTRACT_ADDRESS}</span>
+        <div className="mx-auto flex max-w-5xl flex-wrap gap-x-6 gap-y-1 px-4 py-4">
+          <span className="mono text-muted">
+            Contract {CONTRACT_ADDRESS}
           </span>
-          <span>Network: {NETWORK_NAME}</span>
+          <span className="mono text-muted">Network: {NETWORK_NAME}</span>
         </div>
       </div>
     </footer>
