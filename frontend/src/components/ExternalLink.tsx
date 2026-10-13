@@ -20,10 +20,7 @@ export function ExternalLink({
       title={title}
     >
       {children}
-      <span
-        aria-hidden="true"
-        className="ml-1 align-middle font-mono text-[0.85em] opacity-70"
-      >
+      <span aria-hidden="true" className="ml-1 text-[0.7em] opacity-70">
         ↗
       </span>
     </a>

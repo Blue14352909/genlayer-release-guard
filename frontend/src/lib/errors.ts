@@ -1,4 +1,4 @@
-/** Normalize thrown values (SDK/RPC errors) into a readable message. */
+/** Normalize thrown values (SDK/viem/wallet errors) into a readable message. */
 
 export interface NormalizedError {
   title: string;
@@ -34,35 +34,50 @@ export function normalizeError(error: unknown): NormalizedError {
     };
   }
 
+  if (lower.includes("user rejected") || lower.includes("user denied")) {
+    return {
+      title: "Request rejected in wallet",
+      detail: "You declined the signature request. Nothing was submitted.",
+    };
+  }
+
+  if (lower.includes("no injected") || lower.includes("no ethereum")) {
+    return {
+      title: "No wallet detected",
+      detail:
+        "Install an EIP-1193 browser wallet (for example MetaMask), then reload this page.",
+    };
+  }
+
+  if (lower.includes("wallet is on chain")) {
+    return {
+      title: "Wrong network",
+      detail:
+        "Your wallet is connected to a different chain. Switch to GenLayer Studionet and try again.",
+    };
+  }
+
   if (lower.includes("verification not found")) {
     return {
-      title: "No such verification",
+      title: "Verification not found",
       detail:
-        "No verification with that id exists on the deployed ReleaseGuard contract. Check the id and try again.",
+        "No verification with that ID exists on the deployed ReleaseGuard contract.",
     };
   }
 
-  if (
-    lower.includes("failed to fetch") ||
-    lower.includes("fetch failed") ||
-    lower.includes("network") ||
-    lower.includes("econn") ||
-    lower.includes("timeout") ||
-    lower.includes("cors") ||
-    lower.includes("blocked")
-  ) {
+  if (lower.includes("not pending")) {
     return {
-      title: "Could not reach the network",
+      title: "Already executed",
       detail:
-        "The read against GenLayer Studionet did not complete. This is a public RPC read — wait a moment, then retry.",
+        "This verification is no longer pending. Reload it to see the stored result.",
     };
   }
 
-  if (lower.includes("execution failed") || lower.includes("gen_call")) {
+  if (lower.includes("execution failed")) {
     return {
-      title: "The contract rejected the read",
+      title: "Contract rejected the call",
       detail:
-        "The contract raised an error for this id. Confirm the verification id and that it exists on the deployed contract.",
+        "The contract raised an error. Check the verification ID and the requested parameters.",
     };
   }
 

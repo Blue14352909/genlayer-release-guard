@@ -30,3 +30,9 @@ export interface Verification {
   failed_checks: string;
   results: CheckResult[];
 }
+
+export interface TxProgressStep {
+  key: string;
+  label: string;
+  state: "idle" | "active" | "done" | "error";
+}

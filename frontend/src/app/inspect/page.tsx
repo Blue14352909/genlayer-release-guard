@@ -8,15 +8,18 @@ import {
   type ReactNode,
 } from "react";
 import { useSearchParams } from "next/navigation";
-import { CheckResultsList } from "@/components/CheckResultsList";
+import { CheckStatusBadge } from "@/components/CheckStatusBadge";
 import { ErrorCard } from "@/components/ErrorCard";
 import { ExternalLink } from "@/components/ExternalLink";
 import { VerdictBadge } from "@/components/VerdictBadge";
-import { CONTRACT_ADDRESS, EXAMPLE, NETWORK_NAME } from "@/lib/config";
+import {
+  CONTRACT_ADDRESS,
+  EXAMPLE,
+  NETWORK_NAME,
+} from "@/lib/config";
 import { normalizeError } from "@/lib/errors";
-import { isHttpsUrl, sanitizeText } from "@/lib/format";
+import { isHttpsUrl, sanitizeText, truncateMiddle } from "@/lib/format";
 import { readCheckResults, readVerdict, readVerification } from "@/lib/genlayer";
-import { describePolicies } from "@/lib/policy";
 import type { CheckResult, Verification } from "@/lib/types";
 
 type Phase = "idle" | "loading";
@@ -26,18 +29,54 @@ interface Failure {
   detail: string;
 }
 
-function Row({ label, children }: { label: string; children: ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <tr>
-      <th scope="row">{label}</th>
-      <td>{children}</td>
-    </tr>
+    <div>
+      <dt className="text-xs tracking-wide text-muted uppercase">{label}</dt>
+      <dd className="mt-1 text-sm break-words">{children}</dd>
+    </div>
+  );
+}
+
+function ResultList({ results }: { results: CheckResult[] }) {
+  if (results.length === 0) {
+    return (
+      <p className="text-sm text-muted">
+        The contract returned no individual check results for this verification.
+      </p>
+    );
+  }
+  return (
+    <ul className="grid gap-3">
+      {results.map((result, index) => (
+        <li key={`${result.check_name}-${index}`} className="card card-pad">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="mono" style={{ color: "var(--color-accent-2)" }}>
+              {sanitizeText(result.check_name, 40)}
+            </span>
+            <CheckStatusBadge status={result.status} />
+          </div>
+          {result.evidence ? (
+            <p className="mt-3 text-sm">
+              <span className="text-muted">Evidence: </span>
+              {sanitizeText(result.evidence, 400)}
+            </p>
+          ) : null}
+          {result.reason ? (
+            <p className="mt-1 text-sm">
+              <span className="text-muted">Reason: </span>
+              {sanitizeText(result.reason, 600)}
+            </p>
+          ) : null}
+        </li>
+      ))}
+    </ul>
   );
 }
 
 export default function InspectPage() {
-  // `useSearchParams` needs a Suspense boundary so the route can still be
-  // prerendered; the inspector renders on the client.
+  // `useSearchParams` requires a Suspense boundary so the route can still be
+  // prerendered; the inspector itself then renders on the client.
   return (
     <Suspense fallback={<InspectFallback />}>
       <InspectView />
@@ -47,9 +86,9 @@ export default function InspectPage() {
 
 function InspectFallback() {
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
-      <div className="panel panel-pad">
-        <p className="text-[0.9375rem] text-muted">Loading inspector…</p>
+    <div className="mx-auto max-w-4xl px-4 py-12">
+      <div className="card card-pad">
+        <p className="text-sm text-muted">Loading inspector…</p>
       </div>
     </div>
   );
@@ -65,7 +104,6 @@ function InspectView() {
   const [results, setResults] = useState<CheckResult[]>([]);
   const [phase, setPhase] = useState<Phase>("idle");
   const [failure, setFailure] = useState<Failure | null>(null);
-  const [loaded, setLoaded] = useState(false);
 
   const load = useCallback(async (rawId: string) => {
     const id = rawId.trim();
@@ -79,31 +117,14 @@ function InspectView() {
     }
     setPhase("loading");
     try {
-      // Primary read: the stored record already contains the verdict and the
-      // per-check results, so one call is enough to render the page. Keeping
-      // the critical path to a single request avoids bursting the public RPC.
-      const record = await readVerification(id);
-      setVerification(record);
-      setVerdict(record.verdict || null);
-      setResults(record.results);
-      setLoaded(true);
-
-      // Enrichment reads are best-effort. If the public RPC rejects one (for
-      // example a transient CORS or rate limit), the record still renders from
-      // the primary read instead of collapsing into an error state.
-      const [verdictOutcome, checksOutcome] = await Promise.allSettled([
+      const [record, currentVerdict, checks] = await Promise.all([
+        readVerification(id),
         readVerdict(id),
         readCheckResults(id),
       ]);
-      if (verdictOutcome.status === "fulfilled" && verdictOutcome.value) {
-        setVerdict(verdictOutcome.value);
-      }
-      if (
-        checksOutcome.status === "fulfilled" &&
-        checksOutcome.value.length > 0
-      ) {
-        setResults(checksOutcome.value);
-      }
+      setVerification(record);
+      setVerdict(currentVerdict);
+      setResults(checks.length > 0 ? checks : record.results);
     } catch (err) {
       setVerification(null);
       setVerdict(null);
@@ -114,9 +135,10 @@ function InspectView() {
     }
   }, []);
 
-  // Deep links such as /inspect?id=v-1 prefill the input above and auto-load.
+  // Deep links such as /inspect?id=v-2 prefill the input above and auto-load.
   // The load is scheduled as a task rather than run inline so no state is
-  // committed synchronously from an effect body.
+  // committed synchronously from an effect body. Cancelling on cleanup keeps
+  // this correct under StrictMode's mount/unmount/remount cycle.
   useEffect(() => {
     if (!queryId) return;
     let cancelled = false;
@@ -130,36 +152,24 @@ function InspectView() {
     };
   }, [queryId, load]);
 
-  const status = verification?.status ?? "";
-  const isPending = status === "PENDING" || status === "RUNNING";
+  const isPending =
+    verification?.status === "PENDING" || verification?.status === "RUNNING";
   const busy = phase === "loading";
 
   const evidenceUrl = verification?.evidence_url ?? "";
   const evidenceIsLink = isHttpsUrl(evidenceUrl);
-  const policies = describePolicies(verification?.policy_text ?? "");
-  const isExample = idInput.trim() === EXAMPLE.verificationId;
 
   return (
-    <div className="mx-auto max-w-3xl px-4 py-12">
+    <div className="mx-auto max-w-4xl px-4 py-12">
       <header className="mb-8">
-        <p className="eyebrow">Verify a result</p>
-        <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
-          Inspect a stored verification.
-        </h1>
-        <p className="lede mt-3 max-w-2xl">
-          Enter a verification id to read it directly from the deployed
-          contract. Every value shown is a real contract read — the Console
-          stores nothing and never connects a wallet.
+        <h1 className="text-3xl font-extrabold tracking-tight">Inspect result</h1>
+        <p className="mt-2 max-w-2xl text-sm text-muted">
+          Read a stored verification directly from the deployed contract. All
+          values below come from real contract reads.
         </p>
       </header>
 
-      <form
-        className="panel panel-pad"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void load(idInput);
-        }}
-      >
+      <div className="card card-pad">
         <label className="label" htmlFor="vid">
           Verification id
         </label>
@@ -169,13 +179,20 @@ function InspectView() {
             className="input flex-1 min-w-[12rem]"
             value={idInput}
             onChange={(e) => setIdInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") void load(idInput);
+            }}
             placeholder="v-1"
             autoComplete="off"
-            spellCheck={false}
             disabled={busy}
           />
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            {busy ? "Reading…" : "Load verification"}
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => void load(idInput)}
+            disabled={busy}
+          >
+            {phase === "loading" ? "Loading…" : "Load Verification"}
           </button>
           <button
             type="button"
@@ -186,14 +203,10 @@ function InspectView() {
             }}
             disabled={busy}
           >
-            Load example (v-1)
+            Load example ({EXAMPLE.verificationId})
           </button>
         </div>
-        <p className="mt-3 text-[0.9375rem] text-muted">
-          Example: <span className="mono">{EXAMPLE.verificationId}</span> — the
-          verified <span className="mono">requests 2.31.0</span> record.
-        </p>
-      </form>
+      </div>
 
       {failure ? (
         <div className="mt-4">
@@ -214,118 +227,87 @@ function InspectView() {
         </div>
       ) : null}
 
-      {!verification && !failure && !loaded ? (
-        <p className="mt-6 text-[0.9375rem] text-muted">
-          No result loaded yet. Enter a verification id or load the verified
-          example.
-        </p>
-      ) : null}
-
       {verification ? (
         <div className="mt-6 grid gap-6">
-          <div className="panel panel-pad">
+          <div className="card card-pad">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <p className="mono text-muted">Final verdict</p>
+                <p className="text-xs tracking-wide text-muted uppercase">
+                  Final verdict
+                </p>
                 <div className="mt-2">
                   <VerdictBadge
                     verdict={
-                      isPending ? status : (verdict ?? verification.verdict)
+                      isPending
+                        ? verification.status
+                        : (verdict ?? verification.verdict)
                     }
                     size="lg"
                   />
                 </div>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                {isExample ? (
-                  <span className="chip">Verified example</span>
-                ) : null}
-                <span className="chip">{sanitizeText(verification.id, 40)}</span>
-              </div>
+              <span className="chip mono">{sanitizeText(verification.id, 40)}</span>
             </div>
 
             {isPending ? (
-              <p className="mt-5 text-[0.9375rem] text-muted">
-                This record has not produced a verdict yet. Running a
-                verification requires a transaction, which this read-only
-                console does not submit — use GenLayer Studio to execute it,
-                then reload this page.
-              </p>
+              <div className="mt-5">
+                <p className="text-sm text-muted">
+                  This public deployment is read-only. It can inspect the
+                  stored result but does not request wallet access or submit transactions.
+                </p>
+              </div>
             ) : null}
           </div>
 
-          <div className="panel panel-pad">
+          <div className="card card-pad">
             <h2 className="text-lg font-semibold">Record</h2>
-            <table className="data-table mt-2">
-              <tbody>
-                <Row label="Project">
-                  <span className="strong">
-                    {sanitizeText(verification.project_name, 200) || "—"}
+            <dl className="mt-4 grid gap-4 sm:grid-cols-2">
+              <Field label="Project">{sanitizeText(verification.project_name, 200)}</Field>
+              <Field label="Version">{sanitizeText(verification.version, 80)}</Field>
+              <Field label="Policy text">
+                <span className="mono">
+                  {sanitizeText(verification.policy_text, 200) || "(empty)"}
+                </span>
+              </Field>
+              <Field label="Request status">
+                <span className="mono">{sanitizeText(verification.status, 40)}</span>
+              </Field>
+              <Field label="Reason code">
+                <span className="mono">
+                  {sanitizeText(verification.reason_code, 80) || "—"}
+                </span>
+              </Field>
+              <Field label="Failed checks">
+                <span className="mono">
+                  {sanitizeText(verification.failed_checks, 200) || "—"}
+                </span>
+              </Field>
+              <Field label="Evidence URL">
+                {evidenceIsLink ? (
+                  <ExternalLink href={evidenceUrl} className="link">
+                    <span className="break-all">{sanitizeText(evidenceUrl, 300)}</span>
+                  </ExternalLink>
+                ) : (
+                  <span className="break-all">
+                    {sanitizeText(evidenceUrl, 300) || "—"}
                   </span>
-                </Row>
-                <Row label="Version">
-                  <span className="mono">
-                    {sanitizeText(verification.version, 80) || "—"}
-                  </span>
-                </Row>
-                <Row label="Evidence URL">
-                  {evidenceIsLink ? (
-                    <ExternalLink href={evidenceUrl} className="link break-all">
-                      {sanitizeText(evidenceUrl, 300)}
-                    </ExternalLink>
-                  ) : (
-                    <span className="break-all">
-                      {sanitizeText(evidenceUrl, 300) || "—"}
-                    </span>
-                  )}
-                </Row>
-                <Row label="Policy">
-                  <span className="mono">
-                    {policies.length > 0
-                      ? policies
-                          .map((p) =>
-                            p.supported
-                              ? p.name
-                              : `${p.name} (unsupported)`,
-                          )
-                          .join(", ")
-                      : "—"}
-                  </span>
-                </Row>
-                <Row label="Status">
-                  <span className="mono">
-                    {sanitizeText(verification.status, 40) || "—"}
-                  </span>
-                </Row>
-                <Row label="Reason code">
-                  <span className="mono">
-                    {sanitizeText(verification.reason_code, 80) || "—"}
-                  </span>
-                </Row>
-                <Row label="Failed checks">
-                  <span className="mono">
-                    {sanitizeText(verification.failed_checks, 200) || "—"}
-                  </span>
-                </Row>
-              </tbody>
-            </table>
+                )}
+              </Field>
+            </dl>
           </div>
 
-          <div className="panel panel-pad">
+          <div className="card card-pad">
             <h2 className="text-lg font-semibold">Check results</h2>
             <div className="mt-4">
-              <CheckResultsList results={results} />
+              <ResultList results={results} />
             </div>
           </div>
         </div>
       ) : null}
 
-      <p className="mt-8 text-[0.9375rem] text-muted">
-        Contract <span className="mono break-all">{CONTRACT_ADDRESS}</span> on{" "}
-        {NETWORK_NAME}. Reads use{" "}
-        <span className="mono">get_verification</span>,{" "}
-        <span className="mono">get_verdict</span>, and{" "}
-        <span className="mono">get_check_results</span>.
+      <p className="mt-8 text-xs text-muted">
+        Contract <span className="mono">{sanitizeText(CONTRACT_ADDRESS, 64)}</span>{" "}
+        on {NETWORK_NAME}.
       </p>
     </div>
   );
