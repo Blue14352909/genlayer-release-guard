@@ -184,6 +184,14 @@ A `conftest.py` at the repo root patches a known gltest Windows temp-file issue 
 
 GitHub Actions CI runs on `ubuntu-latest` with Python 3.12 to provide a reproducible passing environment.
 
+## ReleaseGuard V2
+
+ReleaseGuard V2 adds challengeable and revocable release attestations, with deployed Studionet evidence and reproducible consensus transactions.
+
+- [contracts/release_guard_v2.py](contracts/release_guard_v2.py)
+- [docs/RELEASE_GUARD_V2.md](docs/RELEASE_GUARD_V2.md)
+- [tests/direct/test_release_guard_v2.py](tests/direct/test_release_guard_v2.py)
+
 ## Deployment
 
 | Item | Value |

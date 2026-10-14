@@ -5,15 +5,107 @@ intelligent contract that adds a public, challengeable, revocable
 release-attestation registry on top of the verification model already proven by
 ReleaseGuard V1.
 
-> **Status.** V2 is a new, unlisted contract. It has **not been deployed**, has
-> **not been audited**, and is **not production-ready or accepted** as a
-> GenLayer Project revision or Milestone. Everything below is local direct-mode
-> testing plus a Studio procedure you run yourself. Nothing in this document
-> claims V2 is secure, deployed, or accepted.
+> **Status.** V2 is a new, unlisted contract. It **has been deployed to GenLayer
+> Studionet**, and the deployment, attestation and challenge transactions listed
+> below are real Studio consensus evidence. It has **not** been deployed to
+> mainnet, has **not been audited**, and is **not production-ready or accepted**
+> as a GenLayer Project revision or Milestone. Nothing in this document claims V2
+> is secure, audited, mainnet-deployed, or production-ready.
 
 V1 is preserved unchanged: `contracts/release_guard.py`, its tests, its docs and
 its Studio deployment/evidence are untouched. V2 is a separate contract with a
 separate test suite and separate storage.
+
+---
+
+## Studionet deployment and reproducible verification
+
+ReleaseGuard V2 **was deployed to GenLayer Studionet**, and the evidence below
+comes from real Studio consensus transactions: real validators, real web
+retrieval, real LLM evaluation, with the accepted transaction receipts linked for
+every step. This is proof that the contract deploys and reaches consensus on
+Studionet. It is **not** a mainnet deployment, **not** a security audit, and
+**not** a production-readiness claim, and it does not modify or replace the
+already accepted V1 deployment evidence.
+
+### Deployment
+
+- Contract: `ReleaseGuardV2`
+- Network: `GenLayer Studionet`
+- Contract address: `0xFEF316e3d752A9F9A789Eee9B5d99939Fc11c66E`
+- Deployment transaction:
+  https://explorer-studio.genlayer.com/tx/0x20945e5e2b11deb439f72c3e83472e76240dd1173dd96dcbc2fbe70f79831903
+- Explorer contract page:
+  https://explorer-studio.genlayer.com/address/0xFEF316e3d752A9F9A789Eee9B5d99939Fc11c66E
+
+### Claim attestation evidence
+
+1. `create_claim("requests", "2.31.0", "https://pypi.org/project/requests/2.31.0/", "source")`
+   - Returned claim ID: `c-1`
+   - Transaction:
+     https://explorer-studio.genlayer.com/tx/0xd6fa9454b0bf850e089fa560d4dd39fcd28d0195b23c1a7e0a8888a430d7b5c0
+
+   ![Studio transaction for creation of claim c-1](evidence/v2-create-claim-c1.png)
+
+   *Studio transaction for creation of claim c-1.*
+
+2. `run_claim_review("c-1")`
+   - Observed result: `ATTESTED`
+   - Transaction:
+     https://explorer-studio.genlayer.com/tx/0x0782c9650474b245252a0a09ae774d0b52ad477521c64ece485acbb8ff183a65
+
+3. `get_claim("c-1")`
+   - Observed `status: ATTESTED`
+   - Observed `attestation_state: ATTESTED`
+   - Observed passing source result
+
+   ![Stored claim c-1 after consensus review](evidence/v2-get-claim-c1-attested.png)
+
+   *Stored claim c-1 after consensus review.*
+
+4. `get_current_attestation("requests", "2.31.0")`
+   - Observed `exists: true`
+   - Observed `claim_id: c-1`
+   - Observed `status: ATTESTED`
+   - Observed `attestation_state: ATTESTED`
+
+   ![Canonical attestation lookup after successful review](evidence/v2-current-attestation-c1-attested.png)
+
+   *Canonical attestation lookup after successful review.*
+
+### Permissionless challenge evidence
+
+1. `open_challenge("c-1", "https://pypi.org/project/requests/2.32.0/", "This page documents a different requests version and should not invalidate the 2.31.0 release claim.")`
+   - Returned challenge ID: `x-1`
+   - Transaction:
+     https://explorer-studio.genlayer.com/tx/0x2315dfdf839575bf8c7637ba1291dfaf55c0f6989e088fb5c72aaa87c65ae447
+
+   ![Permissionless challenge creation transaction returning x-1](evidence/v2-open-challenge-x1.png)
+
+   *Permissionless challenge creation transaction returning x-1.*
+
+2. `run_challenge_review("x-1")`
+   - Observed result: `ATTESTED`
+   - Transaction:
+     https://explorer-studio.genlayer.com/tx/0x2b08204d7532f21f9750893bf68cbe143b181e9d11b8ee77a2aef37924de4f58
+
+3. `get_challenge("x-1")`
+   - Observed `claim_id: c-1`
+   - Observed `status: RESOLVED`
+
+The challenge used public evidence for a different `requests` release version.
+Consensus resolved the challenge without revoking the existing `requests 2.31.0`
+attestation. This demonstrates that challenges are permissionless and
+independently adjudicated, rather than automatically invalidating a claim.
+
+### Verification limits
+
+- This is Studionet evidence, not a production audit or mainnet deployment.
+- External web evidence can change over time.
+- Callers should read the current attestation state before relying on it.
+- The contract only supports its documented policies and fails closed when
+  evidence is missing, malformed, unsupported, or consensus cannot safely
+  decide.
 
 ---
 
@@ -406,17 +498,22 @@ The `deployed_contract` fixture (in `tests/integration/conftest.py`) builds a
 real gltest contract handle from that address. If the address or network is
 wrong, the tests fail for real - they do not fall back to a fake contract.
 
-Honest limitation: the full Studio lifecycle below has **not** been executed as
-part of this change, because no live deployment and network were available. Only
-the fixture's skip behaviour, its real (non-mock) build path, and the direct
-suite were verified locally.
+This test file itself is still opt-in and skips unless
+`RELEASEGUARD_STUDIO_CONTRACT_ADDRESS` is set, so it is not part of the local
+evidence. The lifecycle it exercises **has** been executed against a real
+Studionet deployment - see "Studionet deployment and reproducible verification"
+above for the transaction links. What was verified locally here is the fixture's
+skip behaviour, its real (non-mock) build path, and the direct suite.
 
 ---
 
 ## 11. GenLayer Studio lifecycle (for you to run)
 
-> This is the procedure **you** run. V2 is not deployed by this document, and no
-> new deployment has been made.
+> This is the reproducible procedure a reviewer can run. V2 is already deployed
+> on Studionet once, and the transactions it produced are recorded in
+> "Studionet deployment and reproducible verification" above. Re-running the steps
+> on a fresh deployment should reproduce the same verdicts, except where external
+> web evidence has changed since.
 
 1. **Deploy V2.** Open GenLayer Studio on **Studionet**, paste the entire
    `contracts/release_guard_v2.py` (keeping the first `# { "Depends": ... }`
@@ -461,8 +558,8 @@ Interpreting results:
 
 ## 12. Scope and honesty
 
-- V2 is **not deployed**. The procedure above is a Studionet procedure, not a
-  record of a completed deployment.
+- V2 is deployed on **Studionet only** (see the evidence at the top of this
+  document). There is no mainnet deployment and no production deployment.
 - V2 is **not audited**, **not production-ready**, and **not accepted** as a
   GenLayer Project revision or Milestone. This document describes the code and
   its tests, not an endorsement.
@@ -471,4 +568,5 @@ Interpreting results:
 - Direct tests run against mocks. They prove contract logic and fail-closed
   behaviour, not the real-world accuracy of any model.
 - The Studio integration tests are opt-in and skip by default; they were not
-  executed against a live network as part of this change.
+  executed against a live network. The Studionet evidence above was produced
+  through GenLayer Studio directly, not through those integration tests.
