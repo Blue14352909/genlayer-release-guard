@@ -81,6 +81,18 @@ export const EXAMPLE = {
   verificationId: "v-1",
 };
 
+/**
+ * ReleaseGuard V2 evidence. V2 is a separate deployment with its own contract
+ * address; the V1 address above is left exactly as it was.
+ */
+export const V2_EVIDENCE = {
+  contractAddress: "0xFEF316e3d752A9F9A789Eee9B5d99939Fc11c66E",
+  guide:
+    "https://github.com/Blue14352909/genlayer-release-guard/blob/ec4f0a657f84acd2358686eeb0dd308b1b84636c/docs/RELEASE_GUARD_V2.md",
+  contract:
+    "https://explorer-studio.genlayer.com/address/0xFEF316e3d752A9F9A789Eee9B5d99939Fc11c66E",
+};
+
 /** Public evidence links shown on the home page. */
 export const EVIDENCE_LINKS = {
   github: "https://github.com/Blue14352909/genlayer-release-guard",

@@ -6,8 +6,11 @@ import {
   EXAMPLE,
   NETWORK_NAME,
   SUPPORTED_POLICIES,
+  V2_EVIDENCE,
   addressUrl,
 } from "@/lib/config";
+
+const V2_LIFECYCLE = ["Claim", "Attest", "Challenge", "Resolve / Revoke"];
 
 const FLOW = [
   {
@@ -134,6 +137,56 @@ export default function HomePage() {
             <div><span className="mono">EVIDENCE OR CONSENSUS UNCLEAR</span><strong className="decision-inconclusive">INCONCLUSIVE</strong></div>
           </div>
         </div>
+      </section>
+
+      <section id="v2" aria-labelledby="v2-heading" className="section-rule py-14">
+        <p className="eyebrow">ReleaseGuard V2 · Studionet deployment</p>
+        <h2 id="v2-heading" className="mt-3 text-3xl font-bold tracking-[-0.04em]">Attestations should survive scrutiny.</h2>
+        <p className="mt-4 max-w-2xl text-sm leading-6 text-muted">
+          ReleaseGuard V2 adds a public challenge lifecycle to release
+          attestations. Anyone can submit contrary public evidence; GenLayer
+          validators independently reassess it. The canonical record can remain
+          attested, become disputed, or be revoked.
+        </p>
+
+        <ol className="v2-lifecycle mt-9" aria-label="ReleaseGuard V2 lifecycle">
+          {V2_LIFECYCLE.map((step) => (
+            <li key={step} className="mono">{step}</li>
+          ))}
+        </ol>
+
+        <dl className="v2-facts mt-8">
+          <div>
+            <dt className="mono text-muted">V2 contract</dt>
+            <dd className="mono break-all">{V2_EVIDENCE.contractAddress}</dd>
+          </div>
+          <div>
+            <dt className="mono text-muted">Real Studionet flow</dt>
+            <dd className="mono">
+              claim c-1 ATTESTED <span aria-hidden="true">→</span> challenge x-1
+              RESOLVED <span aria-hidden="true">→</span> canonical attestation
+              remains ATTESTED
+            </dd>
+          </div>
+          <div>
+            <dt className="mono text-muted">Scope</dt>
+            <dd>This is Studionet evidence, not a production audit.</dd>
+          </div>
+        </dl>
+
+        <div className="mt-8 flex flex-wrap gap-3">
+          <ExternalLink href={V2_EVIDENCE.guide} className="btn btn-primary">
+            Read the V2 verification guide
+          </ExternalLink>
+          <ExternalLink href={V2_EVIDENCE.contract} className="btn btn-secondary">
+            View V2 contract
+          </ExternalLink>
+        </div>
+
+        <p className="mt-5 max-w-lg text-xs leading-5 text-muted">
+          The V1 verified example below remains available as the original
+          one-shot attestation demonstration.
+        </p>
       </section>
 
       <section id="evidence" aria-labelledby="evidence-heading" className="section-rule py-14">
