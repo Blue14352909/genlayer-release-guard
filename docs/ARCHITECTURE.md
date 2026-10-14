@@ -198,7 +198,9 @@ result = SourceCorroboration().verify(project_name, version, url1, url2)
 result = SemanticPolicy().evaluate(url, project_name, version, policy)
 ```
 
-The orchestrator composes them inline (not via cross-contract calls) for gas efficiency and to keep all consensus operations within a single transaction context.
+The orchestrator composes primitives inline (not via cross-contract calls) for gas efficiency and to keep all consensus operations within a single transaction context.
+
+**Orchestrator scope (explicit).** The `ReleaseGuard` orchestrator currently wires **only** `source`, `license`, and `vulnerability`. The `version_attestation`, `freshness_check`, `source_corroboration`, and `semantic_policy` contracts are standalone primitives — deployable and independently useful, but `run_verification` never executes them. Requesting an unwired check name in the policy fails closed: unknown check → `INSUFFICIENT_EVIDENCE` → `INCONCLUSIVE`, never `VERIFIED`.
 
 ---
 

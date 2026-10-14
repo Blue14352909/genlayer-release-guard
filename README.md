@@ -84,6 +84,13 @@ record = contract.get_verification(vid)
 - Unknown check type -> INSUFFICIENT (never VERIFIED)
 - Consensus failure -> INSUFFICIENT -> INCONCLUSIVE
 
+## Limitations
+
+- Extracted facts (license name, vulnerability counts, release/source flags, freshness age) are reported by the LLM and validated for type and shape only — they are not independently recomputed. `days_since_publication`, for example, is trusted as reported rather than derived from the extracted date.
+- Consensus compares the categorical verdict (plus vulnerability counts when both sides report `PASS`), not the evidence excerpt, observed strings, date, or reasoning.
+- Each orchestrator check evaluates one user-supplied URL; source authority is not established. `source_corroboration.py` (standalone) is the multi-source primitive, but it is not orchestrator-wired.
+- The direct test suite mocks web/LLM at the node boundary; the contract call runs the leader only. Forced leader/validator disagreement is exercised via the VM's `run_validator()` helper, but no Studio consensus transaction has been recorded for the orchestrator's fail-closed paths yet.
+
 ## Structure
 
 ```
@@ -151,12 +158,13 @@ Direct-mode tests use mocked web/LLM responses and run against the local GenLaye
 pytest tests/direct/ -v
 ```
 
-This runs 91 tests covering:
+This runs 94 tests covering:
 - Empty/malformed policy fail-closed behavior
 - Vulnerability data validation (missing fields, booleans, nulls, negatives)
 - Freshness max_age_days enforcement
 - Orchestrator verdict composition
 - Individual check primitives (source, license, vulnerability)
+- Forced leader/validator disagreement (via `direct_vm.run_validator()`) and the consensus-failure path
 
 Integration tests require GenLayer Studio running (`genlayer up`):
 

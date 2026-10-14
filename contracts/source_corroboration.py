@@ -187,6 +187,10 @@ class SourceCorroboration(gl.Contract):
     Requires at least 2 source URLs.
     """
 
+    def __init__(self):
+        # GenVM requires a contract __init__, even for a stateless primitive.
+        pass
+
     @gl.public.write
     def verify(self, project_name: str, version: str,
                url1: str, url2: str) -> dict:

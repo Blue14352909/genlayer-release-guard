@@ -500,21 +500,35 @@ def test_unknown_check_alone_produces_inconclusive(
 
 def test_consensus_failure_produces_inconclusive(
         direct_deploy, direct_vm, direct_alice):
-    """Consensus exception (validator disagrees) produces INCONCLUSIVE,
-    not REJECTED. A consensus failure means we couldn't establish a
-    result — it does not mean the evidence was evaluated and failed."""
+    """A check that raises — the path a real consensus failure takes —
+    is recorded as INSUFFICIENT_EVIDENCE -> INCONCLUSIVE, never REJECTED.
+
+    In direct mode run_nondet_unsafe does not re-run the validator, so the
+    way to reach the orchestrator's ``except Exception`` branch is to make
+    the leader itself raise. Mocking the web fetch but not the LLM step
+    does exactly that: exec_prompt raises inside the check, the exception
+    propagates out of run_nondet_unsafe, and the orchestrator records the
+    fail-closed INSUFFICIENT result.
+    """
     contract = direct_deploy("contracts/release_guard.py")
     direct_vm.sender = direct_alice
-    # No mocks registered → leader_fn will raise MockNotFoundError
-    # → caught by except Exception → E_INSUFFICIENT → INCONCLUSIVE
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    # Intentionally no LLM mock -> exec_prompt raises MockNotFoundError.
     vid = contract.create_verification(
         "TestProject", "1.0.0",
-        "https://down.example.com/release",
+        "https://github.com/test/project",
         "source")
     result = contract.run_verification(vid)
     assert result == "INCONCLUSIVE"
     v = contract.get_verification(vid)
     assert v["verdict"] == "INCONCLUSIVE"
+    # The check was never evaluated -> INSUFFICIENT, never FAIL.
+    assert v["results"][0]["status"] == "INSUFFICIENT_EVIDENCE"
+    assert v["results"][0]["evidence"] == "Consensus not reached"
+    assert v["failed_checks"] == "source"
 
 
 def test_mixed_inconclusive_rejected_pass_produces_rejected(
@@ -695,3 +709,94 @@ def test_orchestrator_uses_visible_release_facts_when_llm_is_unknown(
     vid = contract.create_verification(
         "requests", "2.31.0", "https://pypi.org/project/requests/2.31.0/", "source")
     assert contract.run_verification(vid) == "VERIFIED"
+
+
+# -----------------------------------------------------------------------
+# Forced leader/validator disagreement (the equivalence function itself)
+# -----------------------------------------------------------------------
+def test_validator_disagrees_when_evidence_changes(
+        direct_deploy, direct_vm, direct_alice):
+    """A forced leader/validator divergence: the validator sees different
+    evidence and returns False.
+
+    Direct mode runs only the leader during the contract call and captures
+    the validator; ``direct_vm.run_validator()`` replays it against swapped
+    mocks — exactly what a real node that fetched different content would
+    do. In the real protocol a False here makes run_nondet_unsafe raise,
+    which the orchestrator records as INSUFFICIENT_EVIDENCE (fail closed).
+    This proves the validator compares the checked verdict rather than
+    blindly accepting the leader.
+    """
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    # Leader sees a matching release page -> PASS
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "TestProject", "observed_version": "1.0.0", '
+        '"page_has_release_content": true}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0",
+        "https://github.com/test/project", "source")
+    assert contract.run_verification(vid) == "VERIFIED"
+
+    # Validator node fetches a page with no matching release facts -> FAIL
+    direct_vm.clear_mocks()
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Completely unrelated page with no release information."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "Other", "observed_version": "9.9.9", '
+        '"page_has_release_content": true}')
+    assert direct_vm.run_validator() is False
+
+
+def test_validator_disagrees_when_evidence_unavailable(
+        direct_deploy, direct_vm, direct_alice):
+    """If the validator cannot retrieve the evidence, it cannot confirm the
+    leader and returns False (fail closed)."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "TestProject", "observed_version": "1.0.0", '
+        '"page_has_release_content": true}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0",
+        "https://github.com/test/project", "source")
+    assert contract.run_verification(vid) == "VERIFIED"
+
+    # Validator node cannot reach the URL: no web mock -> FETCH_FAILED.
+    direct_vm.clear_mocks()
+    assert direct_vm.run_validator() is False
+
+
+def test_validator_rejects_unknown_leader_status(
+        direct_deploy, direct_vm, direct_alice):
+    """A leader result with an unrecognized status or shape is not
+    confirmable — the validator fails closed instead of accepting it."""
+    contract = direct_deploy("contracts/release_guard.py")
+    direct_vm.sender = direct_alice
+    direct_vm.mock_web(
+        ".*github.com.*",
+        {"method": "GET", "status": 200,
+         "body": "Release v1.0.0 of TestProject. Download source."})
+    direct_vm.mock_llm(
+        ".*",
+        '{"observed_project": "TestProject", "observed_version": "1.0.0", '
+        '"page_has_release_content": true}')
+    vid = contract.create_verification(
+        "TestProject", "1.0.0",
+        "https://github.com/test/project", "source")
+    contract.run_verification(vid)
+    assert direct_vm.run_validator(leader_result={"status": "MAYBE"}) is False
+    assert direct_vm.run_validator(leader_result="not a dict") is False

@@ -175,6 +175,10 @@ class FreshnessCheck(gl.Contract):
     Can be used standalone or composed into larger verification pipelines.
     """
 
+    def __init__(self):
+        # GenVM requires a contract __init__, even for a stateless primitive.
+        pass
+
     @gl.public.write
     def verify(self, url: str, project_name: str, version: str,
                max_age_days: str) -> dict:

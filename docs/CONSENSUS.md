@@ -19,6 +19,8 @@ Every non-deterministic operation in ReleaseGuard uses GenLayer's Equivalence Pr
 | SemanticPolicy | `prompt_non_comparative` | Leader's evaluation judged | Validator judges leader output against criteria, doesn't reproduce |
 | Orchestrator verdict | **Deterministic** (no consensus) | N/A — pure code | Fail-closed rules are deterministic; no LLM needed |
 
+**Equivalence scope (explicit).** Validators compare the *categorical verdict* only — for `VulnerabilityCheck`, the two vulnerability counts are compared as well (and only when both sides report `PASS`). Everything else a node extracts — the reasoning text, the evidence excerpt, the observed project/version/license strings, the extracted date, and the corroboration counts — is intentionally **not** part of the equivalence check, because independent nodes legitimately produce different prose and slightly different observed strings. The trade-off is deliberate: a validator confirms that the leader reached the same *decision* from the same evidence, not that it recorded identical supporting detail. The final verdict is deterministic code and does not itself go through consensus.
+
 ---
 
 ## Why Not strict_eq?

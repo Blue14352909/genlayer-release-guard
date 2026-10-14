@@ -12,7 +12,7 @@ ReleaseGuard is designed to evaluate untrusted external evidence using non-deter
 |---|---|---|
 | **Spoofed evidence URL** | Attacker provides a URL that looks legitimate but serves manipulated content | SourceCorroboration requires 2+ independent sources; LLMs evaluate observable content, not claims |
 | **Prompt injection** | Content at the evidence URL contains instructions for the LLM evaluator | Evaluator prompt explicitly instructs treating content as untrusted; injected instructions are ignored |
-| **Tampered page content** | Attacker modifies what the URL serves between leader and validator fetch | Independent fetch ensures each node sees the current content; discrepancies cause FAIL |
+| **Tampered page content** | Attacker modifies what the URL serves between leader and validator fetch | Independent fetch ensures each node sees the current content; a verdict discrepancy fails consensus → INSUFFICIENT_EVIDENCE → INCONCLUSIVE (never VERIFIED) |
 | **Malicious LLM output** | Leader LLM returns fabricated or manipulated results | Validator independently re-evaluates; consensus requires agreement on categorical verdict |
 | **Consensus manipulation** | Attacker influences enough validators to agree on a false verdict | GenLayer's consensus protocol requires majority agreement; individual validators are independent |
 | **Stale evidence** | Evidence was valid at verification time but is now outdated | FreshnessCheck enforces maximum age; policies can require recent evidence |
@@ -117,6 +117,8 @@ Only the leader's result is stored on-chain after consensus. Validator results a
 | SemanticPolicy | status | None |
 | Final Verdict | verdict | None |
 
+**Equivalence scope (explicit).** Only the `status` field participates in equivalence — plus `critical_count`/`high_count` for `VulnerabilityCheck` when both sides report `PASS`. The `reason`, `evidence`, `observed_project`, `observed_version`, `observed_license`, `observed_date`, `sources_confirming`, and `sources_total` fields are stored and reported but are **not** compared, because independent nodes legitimately produce different prose and slightly different observed strings. The final verdict row is listed for completeness; it is produced by deterministic code and does not itself go through consensus.
+
 ### Failure Modes
 
 | Failure | Result | Impact |
@@ -158,11 +160,19 @@ The current design is permissionless — anyone can create and run verifications
 
 2. **Prompt injection**: Defense-in-depth but not provably secure against sophisticated injection attacks.
 
-3. **Dynamic content**: Pages that change frequently may produce different content between leader and validator fetches, potentially causing false FAIL results.
+3. **Dynamic content**: Pages that change frequently may produce different content between leader and validator fetches, which fails consensus → INSUFFICIENT_EVIDENCE → INCONCLUSIVE. This is a false "cannot verify", never a false FAIL.
 
 4. **No appeal mechanism**: Once a verification is completed, the result is final. A production system might want dispute resolution.
 
 5. **Single-chain recording**: Results are only on GenLayer. A production system might want cross-chain attestation.
+
+6. **Model-reported facts**: The extracted facts — source `page_has_release_content`, `license_name`, `critical_count`/`high_count`, and freshness `days_since_publication` — come from the LLM. The contracts validate their *type and shape* (rejecting booleans, fractional, negative, null, and missing values) but do not independently recompute them. `days_since_publication`, for example, is trusted as reported and is not derived by parsing the extracted `date_string`. A wrong-but-well-formed value can therefore pass a single evaluation. Consensus requires the leader and validator to agree on the verdict, but two nodes sharing the same model error could still agree on a wrong answer.
+
+7. **Partial equivalence scope**: Consensus compares the categorical verdict only (plus `critical_count`/`high_count` for vulnerability checks, and only when both sides report `PASS`). It does not compare the evidence excerpt, the observed project/version/license strings, the extracted date, the corroboration counts, or the reasoning text — those legitimately vary between nodes. See `CONSENSUS.md` for the exact scope.
+
+8. **Single-source evidence**: Each orchestrator check evaluates one user-supplied URL. ReleaseGuard does not establish source authority; the `source`, `license`, and `vulnerability` checks accept any URL. `SourceCorroboration` (standalone, not orchestrator-wired) is the primitive that requires multiple independent sources.
+
+9. **Test-coverage scope**: The direct test suite mocks web and LLM at the node boundary. The contract call itself only runs the leader; validators are captured, not executed. Genuine leader/validator disagreement is exercised separately through the VM's `run_validator()` helper, but no GenLayer Studio consensus transaction has been recorded for the orchestrator's fail-closed paths yet.
 
 ---
 

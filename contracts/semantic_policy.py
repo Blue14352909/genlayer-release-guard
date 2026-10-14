@@ -148,6 +148,10 @@ class SemanticPolicy(gl.Contract):
     - "No runtime dependencies from untrusted registries"
     """
 
+    def __init__(self):
+        # GenVM requires a contract __init__, even for a stateless primitive.
+        pass
+
     @gl.public.write
     def evaluate(self, url: str, project_name: str, version: str,
                  policy: str) -> dict:
