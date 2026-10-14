@@ -1,6 +1,6 @@
 # { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 """
-ReleaseGuard V2 — Challengeable, Revocable On-Chain Release Attestations
+ReleaseGuard V2 - Challengeable, Revocable On-Chain Release Attestations
 
 A standalone GenLayer intelligent contract that turns a verified release claim
 into a durable, public, *challengeable* attestation.
@@ -14,33 +14,56 @@ V2 adds the missing half of real attestation:
     1. A claim is created and reviewed through GenLayer consensus
        (ATTESTED / REJECTED / UNRESOLVED).
     2. Only an ATTESTED claim may be challenged.
-    3. Any caller — permissionless — may open a challenge with conflicting
+    3. Any caller - permissionless - may open a challenge with conflicting
        public evidence and a short reason.
     4. Validators independently re-evaluate the original claim AND the
        challenge evidence through consensus.
-    5. The challenge resolves to a final, queryable attestation state:
-           ATTESTED   — challenge rejected, original attestation stands
-           REVOKED    — the challenge established the attestation cannot be
-                        relied upon any longer
-           UNRESOLVED — evidence was conflicting/insufficient, so the release
-                        must NOT remain safely attested
+    5. The challenge resolves to a final, queryable state:
+           INVALID    - the challenge evidence was unusable (unreachable,
+                        empty, too short). The original attestation STANDS.
+           ATTESTED   - challenge rejected, original attestation stands
+           REVOKED    - the challenge established the attestation can no
+                        longer be relied upon
+           DISPUTED   - the evidence was retrievable and meaningful, but
+                        consensus could not safely decide. The release must
+                        NOT remain safely attested.
     6. Anyone can read a claim, a challenge, all challenges for a claim, and
        the canonical current attestation for an exact project + version.
+
+Canonical binding (anti-squatting):
+    `create_claim` NEVER reserves or writes the canonical project/version
+    mapping. A PENDING, RUNNING, REJECTED, or UNRESOLVED claim therefore never
+    blocks another claim for the same normalized project/version. The canonical
+    key is bound ONLY when a review genuinely reaches ATTESTED, and only if no
+    other claim is already canonical for that exact key. A competing claim that
+    would otherwise attest finishes UNRESOLVED with
+    reason_code = CANONICAL_ATTESTATION_EXISTS instead of overwriting the
+    canonical record. Once bound, a canonical record is the historical record
+    for that exact version even after it is REVOKED; a later claim can never
+    silently replace it.
 
 Scope (deliberately limited to the three V1 policies):
     source, license, vulnerability
     Any other policy name fails closed (UNRESOLVED). It is never silently
     accepted and never silently dropped.
 
+Evidence URLs:
+    Both create_claim and open_challenge validate the evidence URL with a
+    deterministic, dependency-free HTTPS validator BEFORE any nondeterministic
+    retrieval. Only https:// URLs with a plausible public host are accepted.
+    This validation is a syntactic/structural guard only: it does not, and
+    cannot, prove that a hostname is publicly reachable.
+
 No funds, no wallet, no escrow, no `.payable`: this primitive is about
 verifiable attestation and consensus, not token accounting.
 
 Deterministic composition, fail-closed:
     Consensus produces raw evidence outcomes. Final state is composed by pure,
-    deterministic code. Uncertainty — missing, malformed, unsupported,
-    unreachable, or non-agreeing evidence — collapses to UNRESOLVED, never to
-    ATTESTED. A consensus/runtime failure is NEVER recorded as REJECTED and
-    NEVER as ATTESTED; it is UNRESOLVED.
+    deterministic code. Uncertainty - missing, malformed, unsupported,
+    unreachable, or non-agreeing evidence - collapses to a non-attested state,
+    never to ATTESTED. A consensus/runtime failure is NEVER recorded as
+    REJECTED and NEVER as ATTESTED; it becomes UNRESOLVED (initial review) or
+    DISPUTED (challenge review).
 """
 import json
 import re
@@ -68,6 +91,8 @@ ATTESTED = "ATTESTED"
 REJECTED = "REJECTED"
 REVOKED = "REVOKED"
 UNRESOLVED = "UNRESOLVED"
+INVALID = "INVALID"
+DISPUTED = "DISPUTED"
 
 # ---------------------------------------------------------------------------
 # Claim lifecycle states
@@ -77,6 +102,7 @@ CLAIM_RUNNING = "RUNNING"        # transient: review in flight
 CLAIM_ATTESTED = "ATTESTED"
 CLAIM_REJECTED = "REJECTED"
 CLAIM_CHALLENGED = "CHALLENGED"
+CLAIM_DISPUTED = "DISPUTED"
 CLAIM_REVOKED = "REVOKED"
 CLAIM_UNRESOLVED = "UNRESOLVED"
 
@@ -84,12 +110,17 @@ CLAIM_UNRESOLVED = "UNRESOLVED"
 # Challenge lifecycle states
 # ---------------------------------------------------------------------------
 CHALLENGE_OPEN = "OPEN"
-CHALLENGE_RESOLVED = "RESOLVED"
-CHALLENGE_UNRESOLVED = "UNRESOLVED"
+CHALLENGE_INVALID = "INVALID"        # evidence unusable; attestation untouched
+CHALLENGE_RESOLVED = "RESOLVED"      # decided: ATTESTED or REVOKED
+CHALLENGE_DISPUTED = "DISPUTED"      # credible but undecidable; claim DISPUTED
+
+# Outcomes a decided/classified challenge can carry in `outcome`.
+CHALLENGE_OUTCOMES = (INVALID, ATTESTED, REVOKED, DISPUTED)
 
 SUPPORTED_POLICIES = ("source", "license", "vulnerability")
 
 MAX_CHALLENGE_REASON_LEN = 400
+MIN_CHALLENGE_EVIDENCE_LEN = 20
 MAX_STORED_RESULTS = 64
 
 
@@ -106,7 +137,7 @@ class Claim:
     evidence_url: str
     policy_text: str
     status: str                # claim lifecycle state
-    attestation_state: str     # "" | ATTESTED | REJECTED | REVOKED | UNRESOLVED
+    attestation_state: str     # "" | ATTESTED | REJECTED | REVOKED | UNRESOLVED | DISPUTED
     reason_code: str
     failed_checks: str         # comma-separated failed check names
     active_challenge_id: str   # "" when no challenge is open
@@ -125,14 +156,114 @@ class Challenge:
     challenger: Address
     evidence_url: str
     reason: str
-    status: str                # OPEN | RESOLVED | UNRESOLVED
-    outcome: str               # "" | ATTESTED | REVOKED | UNRESOLVED
+    status: str                # OPEN | INVALID | RESOLVED | DISPUTED
+    outcome: str               # "" | INVALID | ATTESTED | REVOKED | DISPUTED
     reason_code: str
     results_json: str          # recomputed original-policy check results
 
 
 # ---------------------------------------------------------------------------
-# Extraction helpers — shared across checks (ported from V1, unchanged in
+# Evidence URL validation - deterministic, no new dependency, no network.
+# ---------------------------------------------------------------------------
+_HTTPS_SCHEME_RE = re.compile(r"^([A-Za-z][A-Za-z0-9+.\-]*):")
+_URL_BAD_CHARS_RE = re.compile(r"[\s\x00-\x1f\x7f]")
+_REASON_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f]")
+_IPV4_LITERAL_RE = re.compile(r"^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$")
+# A conservative public hostname: labels of [a-z0-9-] that start/end alnum,
+# at least one dot, and an alphabetic TLD of length >= 2.
+_HOSTNAME_RE = re.compile(
+    r"^[a-z0-9]([a-z0-9\-]*[a-z0-9])?"
+    r"(\.[a-z0-9]([a-z0-9\-]*[a-z0-9])?)*\.[a-z]{2,}$"
+)
+# Host suffixes that name local / non-public networks.
+_LOCAL_HOST_SUFFIXES = (
+    ".localhost", ".local", ".internal", ".lan", ".home.arpa", ".localdomain",
+)
+
+
+def _validate_evidence_url(url) -> str:
+    """Return "" when the URL is an acceptable public HTTPS evidence URL.
+
+    Otherwise return a short, stable reason code. Deterministic and
+    dependency-free. This is a structural guard only: passing it does NOT
+    prove that the host is actually reachable.
+
+    Rejected: blank/whitespace, control characters, non-HTTPS schemes
+    (http/file/data/javascript/...), missing "//", userinfo, malformed port,
+    IPv4/IPv6 literals, localhost and local-network suffixes, single-label
+    hosts, and hosts that are not plausible public DNS names.
+    """
+    if url is None:
+        return "URL_MISSING"
+    if not isinstance(url, str):
+        return "URL_INVALID_TYPE"
+    if not url.strip():
+        return "URL_BLANK"
+    if url != url.strip():
+        return "URL_WHITESPACE"
+    if _URL_BAD_CHARS_RE.search(url):
+        return "URL_WHITESPACE"
+
+    scheme_match = _HTTPS_SCHEME_RE.match(url)
+    if scheme_match is None:
+        return "URL_MALFORMED"
+    if scheme_match.group(1).lower() != "https":
+        return "URL_SCHEME_NOT_HTTPS"
+    remainder = url[len(scheme_match.group(0)):]
+    if not remainder.startswith("//"):
+        return "URL_MALFORMED"
+    rest = remainder[2:]
+
+    authority = re.split(r"[/?#]", rest, maxsplit=1)[0]
+    if not authority:
+        return "URL_MALFORMED"
+    if "@" in authority:
+        return "URL_USERINFO_NOT_ALLOWED"
+
+    host = authority
+    if ":" in authority:
+        host, _, port = authority.partition(":")
+        if not port.isdigit():
+            return "URL_MALFORMED"
+        if not 1 <= int(port) <= 65535:
+            return "URL_MALFORMED"
+    host = host.lower()
+    if not host:
+        return "URL_MALFORMED"
+
+    # Bracketed IPv6 literals are out of scope: reject them all.
+    if host.startswith("[") or host.endswith("]"):
+        return "URL_HOST_NOT_PUBLIC"
+    if host == "localhost" or host.endswith(_LOCAL_HOST_SUFFIXES):
+        return "URL_HOST_NOT_PUBLIC"
+    # Any bare IPv4 literal is rejected (covers loopback/private/link-local).
+    if _IPV4_LITERAL_RE.match(host):
+        return "URL_HOST_NOT_PUBLIC"
+    # Single-label hosts are local network names.
+    if "." not in host:
+        return "URL_HOST_NOT_PUBLIC"
+    if not _HOSTNAME_RE.match(host):
+        return "URL_MALFORMED"
+    return ""
+
+
+def _validate_reason(reason) -> str:
+    """Return "" for an acceptable challenge reason, else a reason code."""
+    if reason is None:
+        return "REASON_MISSING"
+    if not isinstance(reason, str):
+        return "REASON_INVALID_TYPE"
+    if not reason.strip():
+        return "REASON_BLANK"
+    if _REASON_CONTROL_RE.search(reason):
+        return "REASON_CONTROL_CHARS"
+    if len(reason) > MAX_CHALLENGE_REASON_LEN:
+        return "REASON_TOO_LONG"
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Extraction helpers - shared across checks (ported from V1, unchanged in
 # meaning so V2 inherits V1's safety fixes)
 # ---------------------------------------------------------------------------
 def _sanitize_content(raw: str, max_len: int = 4000) -> str:
@@ -386,7 +517,7 @@ def _check_vulnerability(url: str, project_name: str, version: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Deterministic composition — NO LLM. Fail closed.
+# Deterministic composition - NO LLM. Fail closed.
 # ---------------------------------------------------------------------------
 def _parse_policies(policy_text: str):
     """Split a comma-separated policy string.
@@ -460,18 +591,18 @@ def _compose_challenge_outcome(recomputed: list, contradiction, evidence_ok: boo
     ``contradiction`` is True, False, or None (unknown/malformed).
 
     Invariants (fail closed):
-        * Unusable challenge evidence            -> UNRESOLVED
-        * Original policy now explicitly FAILs   -> REVOKED (no longer valid)
-        * Original policy now inconclusive       -> UNRESOLVED (cannot stay safe)
-        * Adjudication says contradiction=True   -> REVOKED
-        * Adjudication says contradiction=False  -> ATTESTED (challenge rejected)
-        * Anything else (unknown/malformed)      -> UNRESOLVED
+        * Unusable challenge evidence         -> INVALID  (attestation STANDS)
+        * Original policy now explicitly FAILs-> REVOKED  (no longer valid)
+        * Original policy now inconclusive    -> DISPUTED (cannot confirm)
+        * Adjudication says contradiction=True -> REVOKED
+        * Adjudication says contradiction=False-> ATTESTED (challenge rejected)
+        * Adjudication undecidable (None)     -> DISPUTED (cannot affirm)
     """
     if not evidence_ok:
-        return {"outcome": UNRESOLVED,
-                "reason_code": "CHALLENGE_EVIDENCE_INSUFFICIENT"}
+        return {"outcome": INVALID,
+                "reason_code": "CHALLENGE_EVIDENCE_UNUSABLE"}
     if len(recomputed) == 0:
-        return {"outcome": UNRESOLVED, "reason_code": "EMPTY_POLICY"}
+        return {"outcome": DISPUTED, "reason_code": "ORIGINAL_NOT_CONFIRMED"}
 
     failed = [r.get("check_name", "unknown") for r in recomputed
               if r.get("status") == E_FAIL]
@@ -482,12 +613,12 @@ def _compose_challenge_outcome(recomputed: list, contradiction, evidence_ok: boo
     if len(failed) > 0:
         return {"outcome": REVOKED, "reason_code": "ORIGINAL_NO_LONGER_VALID"}
     if len(inconclusive) > 0:
-        return {"outcome": UNRESOLVED, "reason_code": "INSUFFICIENT_EVIDENCE"}
+        return {"outcome": DISPUTED, "reason_code": "ORIGINAL_NOT_CONFIRMED"}
     if contradiction is True:
         return {"outcome": REVOKED, "reason_code": "CHALLENGE_UPHELD"}
     if contradiction is False:
         return {"outcome": ATTESTED, "reason_code": "CHALLENGE_REJECTED"}
-    return {"outcome": UNRESOLVED, "reason_code": "MALFORMED_CHALLENGE_RESPONSE"}
+    return {"outcome": DISPUTED, "reason_code": "CHALLENGE_UNDECIDED"}
 
 
 def _canonical_key(project_name: str, version: str) -> str:
@@ -495,7 +626,7 @@ def _canonical_key(project_name: str, version: str) -> str:
 
     Project and version are normalized the same way everywhere (strip +
     lowercase, leading `v` removed from the version). Because lookup uses an
-    exact map key — never substring search — version "2" can never collide
+    exact map key - never substring search - version "2" can never collide
     with "11.2.0".
     """
     project = project_name.strip().lower()
@@ -526,11 +657,18 @@ class ReleaseGuardV2(gl.Contract):
     """
     Challengeable, revocable on-chain release attestations.
 
-    One canonical claim per exact project + version. Attested claims can be
-    challenged by anyone; a substantiated challenge revokes the attestation,
-    a rejected challenge leaves it standing, and an unresolvable challenge
-    drops it to UNRESOLVED. No attestation can ever be silently restored to
-    ATTESTED once revoked.
+    At most one canonical claim per exact project + version. The canonical
+    key is bound only when a review reaches ATTESTED, so a PENDING, RUNNING,
+    REJECTED, or UNRESOLVED claim can never block a legitimate release claim.
+    Attested claims can be challenged by anyone:
+
+        * unusable challenge evidence   -> challenge INVALID, attestation stands
+        * substantiated contradiction   -> claim REVOKED (terminal)
+        * rejected contradiction        -> claim stays ATTESTED
+        * credible but undecidable      -> claim DISPUTED (not safely attested)
+
+    No attestation can ever be silently restored to ATTESTED once revoked,
+    and a canonical record is never silently overwritten.
     """
 
     claims: TreeMap[str, Claim]
@@ -549,11 +687,12 @@ class ReleaseGuardV2(gl.Contract):
     @gl.public.write
     def create_claim(self, project_name: str, version: str,
                      evidence_url: str, policy_text: str) -> str:
-        """Register a release claim and reserve its canonical key.
+        """Register a release claim. Permissionless.
 
-        Permissionless. Rejects blank inputs and any duplicate claim for the
-        same exact project + version (existing canonical attestations are
-        never overwritten — use a new version).
+        This does NOT reserve any canonical mapping. Any number of claims may
+        exist for the same project/version; the canonical key is bound only
+        by a review that reaches ATTESTED. Blank inputs and invalid evidence
+        URLs are rejected.
 
         Returns the new claim id ("c-<n>").
         """
@@ -561,15 +700,11 @@ class ReleaseGuardV2(gl.Contract):
             raise gl.vm.UserError("Project name required")
         if not version or not version.strip():
             raise gl.vm.UserError("Version required")
-        if not evidence_url or not evidence_url.strip():
-            raise gl.vm.UserError("Evidence URL required")
-        # Empty policy is allowed — it fails closed (UNRESOLVED) at review time,
+        url_problem = _validate_evidence_url(evidence_url)
+        if url_problem:
+            raise gl.vm.UserError(f"Invalid evidence URL ({url_problem})")
+        # Empty policy is allowed - it fails closed (UNRESOLVED) at review time,
         # exactly as in V1. Do NOT silently default to a policy here.
-
-        key = _canonical_key(project_name, version)
-        if key in self.canonical:
-            raise gl.vm.UserError(
-                "A claim already exists for this project and version")
 
         self.claim_counter = self.claim_counter + 1
         claim_id = f"c-{self.claim_counter}"
@@ -590,7 +725,6 @@ class ReleaseGuardV2(gl.Contract):
             challenge_ids_json="",
         )
         self.claims[claim_id] = claim
-        self.canonical[key] = claim_id
         return claim_id
 
     @gl.public.write
@@ -601,7 +735,12 @@ class ReleaseGuardV2(gl.Contract):
         function of the consensus evidence, so permissionless execution does
         not weaken security.
 
-        Returns the terminal attestation state: ATTESTED | REJECTED | UNRESOLVED.
+        The canonical key is bound ONLY if this review reaches ATTESTED and no
+        other claim is already canonical for that exact project/version. A
+        competing claim that would otherwise attest finishes UNRESOLVED with
+        reason_code CANONICAL_ATTESTATION_EXISTS.
+
+        Returns the terminal state: ATTESTED | REJECTED | UNRESOLVED.
         """
         if claim_id not in self.claims:
             raise gl.vm.UserError("Claim not found")
@@ -692,13 +831,13 @@ class ReleaseGuardV2(gl.Contract):
         # --- Deterministic composition (no LLM). Never leave a stale RUNNING. ---
         try:
             composed = _compose_claim_state(check_results)
-            claim.attestation_state = composed["attestation_state"]
-            claim.reason_code = composed["reason_code"]
-            claim.failed_checks = composed["failed_checks"]
+            state = composed["attestation_state"]
+            reason_code = composed["reason_code"]
+            failed_checks = composed["failed_checks"]
         except Exception:
-            claim.attestation_state = UNRESOLVED
-            claim.reason_code = "COMPOSITION_ERROR"
-            claim.failed_checks = ""
+            state = UNRESOLVED
+            reason_code = "COMPOSITION_ERROR"
+            failed_checks = ""
             check_results = [{
                 "check_name": "composition",
                 "status": E_INSUFFICIENT,
@@ -706,8 +845,26 @@ class ReleaseGuardV2(gl.Contract):
                 "reason": "Deterministic composition failed; fail closed",
             }]
 
+        # --- Canonical binding: ONLY on a genuine ATTESTED, and never an
+        # --- overwrite of an existing canonical record for the same key.
+        if state == ATTESTED:
+            key = _canonical_key(mem_project, mem_version)
+            existing = self.canonical[key] if key in self.canonical else ""
+            if existing == "" or existing == claim_id:
+                self.canonical[key] = claim_id
+            else:
+                # Another claim already owns this exact version. Never
+                # overwrite it, and never label a valid competing claim
+                # REJECTED just for losing the race.
+                state = UNRESOLVED
+                reason_code = "CANONICAL_ATTESTATION_EXISTS"
+                failed_checks = ""
+
+        claim.attestation_state = state
+        claim.reason_code = reason_code
+        claim.failed_checks = failed_checks
         claim.results_json = json.dumps(check_results[:MAX_STORED_RESULTS])
-        claim.status = claim.attestation_state  # terminal lifecycle state
+        claim.status = state  # terminal lifecycle state
 
         return claim.attestation_state
 
@@ -741,20 +898,26 @@ class ReleaseGuardV2(gl.Contract):
                        reason: str) -> str:
         """Open a challenge against an ATTESTED claim. Permissionless.
 
-        Rejected when the claim is not ATTESTED, when a challenge is already
-        open, when the evidence URL duplicates the claim's own evidence, or
-        when this exact (evidence URL, reason) challenge already exists.
+        Rejected (transaction reverts, nothing stored) when: the claim is not
+        ATTESTED; a challenge is already open; the evidence URL is invalid or
+        identical to the claim's own evidence URL; the reason is blank, too
+        long, or contains control characters; or this exact (evidence URL,
+        reason) challenge already exists.
+
+        The challenge starts OPEN. Whether its evidence is usable is decided
+        deterministically at review time, so an unusable challenge becomes
+        INVALID instead of damaging the attestation.
 
         Returns the new challenge id ("x-<n>").
         """
         if claim_id not in self.claims:
             raise gl.vm.UserError("Claim not found")
-        if not evidence_url or not evidence_url.strip():
-            raise gl.vm.UserError("Challenge evidence URL required")
-        if not reason or not reason.strip():
-            raise gl.vm.UserError("Challenge reason required")
-        if len(reason) > MAX_CHALLENGE_REASON_LEN:
-            raise gl.vm.UserError("Challenge reason too long")
+        url_problem = _validate_evidence_url(evidence_url)
+        if url_problem:
+            raise gl.vm.UserError(f"Invalid challenge evidence URL ({url_problem})")
+        reason_problem = _validate_reason(reason)
+        if reason_problem:
+            raise gl.vm.UserError(f"Invalid challenge reason ({reason_problem})")
 
         claim = self.claims[claim_id]
         if claim.status != CLAIM_ATTESTED:
@@ -805,9 +968,12 @@ class ReleaseGuardV2(gl.Contract):
         Validators independently re-evaluate the original claim's policies AND
         the challenge evidence, then the outcome is composed deterministically:
 
-            ATTESTED   — challenge rejected, claim returns to ATTESTED
-            REVOKED    — claim is revoked; canonical state becomes REVOKED
-            UNRESOLVED — claim drops to UNRESOLVED (never stays safely attested)
+            INVALID    - challenge evidence unusable. The claim returns to
+                         ATTESTED and the canonical attestation is preserved.
+            ATTESTED   - challenge rejected, claim returns to ATTESTED.
+            REVOKED    - claim is revoked; canonical state becomes REVOKED.
+            DISPUTED   - retrievable but undecidable; the claim can no longer
+                         remain safely attested and becomes DISPUTED.
 
         Returns the challenge outcome.
         """
@@ -833,22 +999,32 @@ class ReleaseGuardV2(gl.Contract):
         mem_reason = challenge.reason
 
         def leader_fn() -> dict:
-            # Re-evaluate the original claim's supported policies.
+            # Re-evaluate the original claim's supported policies. A check that
+            # cannot be re-run is recorded as INSUFFICIENT (fail closed) rather
+            # than raising, so the outcome stays deterministic.
             supported, _ = _parse_policies(mem_policy)
             recomputed = []
             for name in supported:
-                if name == "source":
-                    recomputed.append(
-                        _check_source(mem_claim_url, mem_project, mem_version))
-                elif name == "license":
-                    recomputed.append(_check_license(mem_claim_url, mem_project))
-                elif name == "vulnerability":
-                    recomputed.append(
-                        _check_vulnerability(mem_claim_url, mem_project, mem_version))
+                try:
+                    if name == "source":
+                        recomputed.append(
+                            _check_source(mem_claim_url, mem_project, mem_version))
+                    elif name == "license":
+                        recomputed.append(_check_license(mem_claim_url, mem_project))
+                    elif name == "vulnerability":
+                        recomputed.append(
+                            _check_vulnerability(mem_claim_url, mem_project, mem_version))
+                except Exception:
+                    recomputed.append({
+                        "check_name": name,
+                        "status": E_INSUFFICIENT,
+                        "evidence": "Re-evaluation failed",
+                        "reason": "Original check could not be re-evaluated",
+                    })
 
             # Fetch and adjudicate the challenge evidence.
             challenge_text = _fetch_page_text(mem_challenge_url)
-            evidence_ok = bool(challenge_text) and len(challenge_text.strip()) >= 20
+            evidence_ok = (len(challenge_text.strip()) >= MIN_CHALLENGE_EVIDENCE_LEN)
             contradiction = None
             contradiction_reason = ""
             if evidence_ok:
@@ -864,16 +1040,23 @@ class ReleaseGuardV2(gl.Contract):
                     "Return JSON: {\"contradiction_established\": true/false, "
                     "\"reason\": \"...\"}"
                 )
-                raw = gl.nondet.exec_prompt(
-                    prompt + f"\n\nChallenge evidence:\n{challenge_text}",
-                    response_format="json")
-                parsed = _parse_json_response(raw)  # raises on malformed -> fail closed
-                if isinstance(parsed, dict) and isinstance(
-                        parsed.get("contradiction_established"), bool):
-                    contradiction = parsed["contradiction_established"]
-                    contradiction_reason = str(parsed.get("reason", ""))
-                else:
+                try:
+                    raw = gl.nondet.exec_prompt(
+                        prompt + f"\n\nChallenge evidence:\n{challenge_text}",
+                        response_format="json")
+                    parsed = _parse_json_response(raw)
+                    if isinstance(parsed, dict) and isinstance(
+                            parsed.get("contradiction_established"), bool):
+                        contradiction = parsed["contradiction_established"]
+                        contradiction_reason = str(parsed.get("reason", ""))
+                    else:
+                        contradiction = None
+                        contradiction_reason = "Malformed adjudication response"
+                except Exception:
+                    # Undecidable adjudication -> contradiction None -> DISPUTED
+                    # (fail closed). Never treated as ATTESTED.
                     contradiction = None
+                    contradiction_reason = "Adjudication could not be completed"
 
             composed = _compose_challenge_outcome(
                 recomputed, contradiction, evidence_ok)
@@ -893,7 +1076,7 @@ class ReleaseGuardV2(gl.Contract):
             if not isinstance(leader_data, dict):
                 return False
             leader_outcome = leader_data.get("outcome", "")
-            if leader_outcome not in (ATTESTED, REVOKED, UNRESOLVED):
+            if leader_outcome not in CHALLENGE_OUTCOMES:
                 return False
             try:
                 validator_data = leader_fn()
@@ -905,15 +1088,17 @@ class ReleaseGuardV2(gl.Contract):
 
         try:
             result = gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
-            outcome = str(result.get("outcome", UNRESOLVED))
+            if not isinstance(result, dict):
+                raise gl.vm.UserError("Malformed challenge consensus result")
+            outcome = str(result.get("outcome", DISPUTED))
             reason_code = str(result.get("reason_code", ""))
             checks = result.get("checks", [])
             if not isinstance(checks, list):
                 checks = []
         except Exception:
-            # Consensus failure -> UNRESOLVED (fail closed). Never REJECTED,
+            # Consensus failure -> DISPUTED (fail closed). Never REJECTED,
             # never silently ATTESTED.
-            outcome = UNRESOLVED
+            outcome = DISPUTED
             reason_code = "CONSENSUS_FAILED"
             checks = [{
                 "check_name": "challenge",
@@ -922,8 +1107,8 @@ class ReleaseGuardV2(gl.Contract):
                 "reason": "Validator disagreed or execution failed",
             }]
 
-        if outcome not in (ATTESTED, REVOKED, UNRESOLVED):
-            outcome = UNRESOLVED
+        if outcome not in CHALLENGE_OUTCOMES:
+            outcome = DISPUTED
             reason_code = "MALFORMED_CHALLENGE_RESPONSE"
 
         # --- Deterministic state transition. REVOKED is terminal. ---
@@ -948,11 +1133,23 @@ class ReleaseGuardV2(gl.Contract):
                 claim.status = CLAIM_ATTESTED
                 claim.attestation_state = ATTESTED
                 claim.reason_code = ""
-        else:
-            challenge.status = CHALLENGE_UNRESOLVED
-            claim.status = CLAIM_UNRESOLVED
-            claim.attestation_state = UNRESOLVED
-            claim.reason_code = reason_code or "CHALLENGE_UNRESOLVED"
+        elif outcome == INVALID:
+            # Unusable challenge evidence must NOT damage a valid attestation.
+            challenge.status = CHALLENGE_INVALID
+            if claim.attestation_state == ATTESTED:
+                claim.status = CLAIM_ATTESTED
+                claim.attestation_state = ATTESTED
+                claim.reason_code = ""
+            else:
+                # Defensive: never leave a non-attested claim looking attested.
+                claim.status = CLAIM_DISPUTED
+                claim.attestation_state = DISPUTED
+                claim.reason_code = "CHALLENGE_INVALID_UNEXPECTED_STATE"
+        else:  # DISPUTED
+            challenge.status = CHALLENGE_DISPUTED
+            claim.status = CLAIM_DISPUTED
+            claim.attestation_state = DISPUTED
+            claim.reason_code = reason_code or "CHALLENGE_UNDECIDED"
 
         return outcome
 
@@ -981,8 +1178,11 @@ class ReleaseGuardV2(gl.Contract):
     def get_current_attestation(self, project_name: str, version: str) -> dict:
         """Return the canonical current attestation for an exact project+version.
 
-        Returns an empty record (exists=False) when no claim has been created
-        for that exact pair. No substring matching is ever used.
+        `exists` is False until a review has genuinely bound this exact
+        project/version to an ATTESTED claim. After binding, `status` and
+        `attestation_state` always reflect the claim's real current state, so a
+        REVOKED or DISPUTED canonical record is explicitly not attestable.
+        No substring matching is ever used.
         """
         key = _canonical_key(project_name, version)
         if key not in self.canonical:
